@@ -1,0 +1,16 @@
+/* Weldam House — design tokens */
+:root {
+  --wh-bone: #F7F1E4;      /* page background */
+  --wh-surface: #FFFFFF;   /* cards */
+  --wh-ink: #211D18;       /* primary text / dark surfaces */
+  --wh-taupe: #5C544A;     /* secondary text */
+  --wh-tomato: #A63A1C;    /* accent: CTAs, tags, hovers */
+  --wh-ochre: #E8B84B;     /* accent on dark bg ONLY */
+  --wh-sand: #D9CDB4;      /* borders, muted fills */
+  --wh-success: #3E6B45;
+  --wh-warning: #8A5A14;
+  --wh-error: #9C3719;
+
+  --wh-font-display: 'Instrument Serif', serif;
+  --wh-font-body: 'Archivo', sans-serif;
+}

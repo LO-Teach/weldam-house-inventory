@@ -12,6 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+
+    // Weldam House:
+    // `astryx theme build` output. Regenerate it with `npm run theme:build`,
+    // never hand-edit it, and do not lint it — the emitted .d.ts uses a triple
+    // slash reference to pull in the custom Badge variants, which is the
+    // supported mechanism for module augmentation and not ours to change.
+    "src/theme/built/**",
+    ".work/**",
   ]),
 ]);
 

@@ -1,0 +1,32 @@
+/* Weldam House Inventory — global stylesheet.
+ *
+ * There is nothing to author here. The layer declaration below fixes the
+ * cascade order, the imports pull in Astryx's prebuilt CSS plus the Weldam
+ * theme, and the Tailwind bridge maps token-backed utilities (bg-surface,
+ * text-primary, rounded-lg) onto Astryx tokens.
+ *
+ * Do not add rules to this file. Styling goes through component props, then
+ * token-backed Tailwind utilities, then — for anything genuinely component
+ * shaped — a `components` override in src/theme/weldam.ts.
+ */
+
+@layer reset, theme, base, astryx-base, astryx-theme, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+@import '@astryxdesign/core/reset.css';
+@import '@astryxdesign/core/astryx.css';
+@import '../theme/built/weldam.css';
+@import '@astryxdesign/core/tailwind-theme.css';
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* The one rule this file carries. Astryx's reset deliberately leaves the
+ * document background alone, and AppShell only paints inside itself — so
+ * without this, overscroll and any gap around the shell show browser white
+ * instead of bone. The value is the theme token, never a literal. */
+@layer base {
+  html,
+  body {
+    background-color: var(--color-background-body);
+  }
+}

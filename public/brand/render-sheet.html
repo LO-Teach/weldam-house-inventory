@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Weldam House — logo render sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Archivo:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#888; display:flex; flex-direction:column; gap:24px; padding:24px; font-family:Archivo,sans-serif; }
+  .board { position:relative; }
+  .label { color:#fff; font-size:12px; margin-bottom:6px; }
+  .tag { display:flex; align-items:center; justify-content:center; background:#A63A1C;
+         clip-path:polygon(0 50%, 16% 0, 100% 0, 100% 100%, 16% 100%); box-sizing:border-box; }
+  .tag span { font-family:'Instrument Serif',serif; color:#F7F1E4; line-height:1; }
+</style>
+</head>
+<body>
+
+<div class="label">square-light 512×512</div>
+<div id="square-light" class="board" style="width:512px;height:512px;background:#F7F1E4;display:flex;align-items:center;justify-content:center;">
+  <div class="tag" style="width:400px;height:248px;transform:rotate(-8deg);padding-left:40px;
+    -webkit-mask:radial-gradient(circle 25px at 40px 50%, transparent 97%, #000 100%);
+    mask:radial-gradient(circle 25px at 40px 50%, transparent 97%, #000 100%);">
+    <span style="font-size:166px;">W</span>
+  </div>
+</div>
+
+<div class="label">square-dark 512×512</div>
+<div id="square-dark" class="board" style="width:512px;height:512px;background:#211D18;display:flex;align-items:center;justify-content:center;">
+  <div class="tag" style="width:400px;height:248px;transform:rotate(-8deg);padding-left:40px;
+    -webkit-mask:radial-gradient(circle 25px at 40px 50%, transparent 97%, #000 100%);
+    mask:radial-gradient(circle 25px at 40px 50%, transparent 97%, #000 100%);">
+    <span style="font-size:166px;">W</span>
+  </div>
+</div>
+
+<div class="label">horizontal-light 1024w (transparent)</div>
+<div id="horizontal-light" class="board" style="width:1024px;height:214px;display:flex;align-items:center;gap:50px;padding:0 10px;box-sizing:border-box;">
+  <span style="font-family:'Instrument Serif',serif;font-size:149px;line-height:1;color:#211D18;white-space:nowrap;">Weldam House</span>
+  <div class="tag" style="width:157px;height:97px;transform:rotate(-8deg);padding-left:16px;
+    -webkit-mask:radial-gradient(circle 10px at 16px 50%, transparent 97%, #000 100%);
+    mask:radial-gradient(circle 10px at 16px 50%, transparent 97%, #000 100%);">
+    <span style="font-size:66px;">W</span>
+  </div>
+</div>
+
+<div class="label">horizontal-dark 1024w (transparent)</div>
+<div id="horizontal-dark" class="board" style="width:1024px;height:214px;display:flex;align-items:center;gap:50px;padding:0 10px;box-sizing:border-box;">
+  <span style="font-family:'Instrument Serif',serif;font-size:149px;line-height:1;color:#F7F1E4;white-space:nowrap;">Weldam House</span>
+  <div class="tag" style="width:157px;height:97px;transform:rotate(-8deg);padding-left:16px;
+    -webkit-mask:radial-gradient(circle 10px at 16px 50%, transparent 97%, #000 100%);
+    mask:radial-gradient(circle 10px at 16px 50%, transparent 97%, #000 100%);">
+    <span style="font-size:66px;">W</span>
+  </div>
+</div>
+
+</body>
+</html>

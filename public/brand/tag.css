@@ -1,0 +1,45 @@
+/* Weldam House — price-tag component (the brand signature)
+   Usage: <span class="wh-tag">€ 120</span>
+          <span class="wh-tag wh-tag--sold">Verkocht</span>
+          <span class="wh-tag wh-tag--logo">W</span>
+   Requires tokens.css + fonts.css. */
+
+.wh-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wh-tomato);
+  color: #FFFFFF;
+  font-family: var(--wh-font-body);
+  font-weight: 600;
+  font-size: 0.875rem;
+  padding: 0.375em 0.75em 0.375em 1em;
+  clip-path: polygon(0 50%, 12% 0, 100% 0, 100% 100%, 12% 100%);
+  transform: rotate(-4deg);
+  white-space: nowrap;
+}
+
+/* sold: taupe, struck-through price goes OUTSIDE the tag */
+.wh-tag--sold { background: var(--wh-taupe); color: var(--wh-bone); }
+
+/* logo variant: Instrument Serif W, steeper rotation, punched hole */
+.wh-tag--logo {
+  font-family: var(--wh-font-display);
+  font-weight: 400;
+  transform: rotate(-8deg);
+  clip-path: polygon(0 50%, 16% 0, 100% 0, 100% 100%, 16% 100%);
+  -webkit-mask: radial-gradient(circle 0.12em at 0.35em 50%, transparent 97%, #000 100%);
+  mask: radial-gradient(circle 0.12em at 0.35em 50%, transparent 97%, #000 100%);
+  aspect-ratio: 1.25 / 0.775;
+}
+
+/* divider: [hairline] — [empty tag] — [hairline] */
+.wh-divider { display: flex; align-items: center; gap: 1.25rem; }
+.wh-divider::before, .wh-divider::after { content: ""; flex: 1; height: 1px; background: var(--wh-ink); opacity: 0.35; }
+.wh-divider > .wh-divider-tag {
+  width: 2.125rem; height: 1.3125rem;
+  background: var(--wh-bone);
+  border: 1px solid var(--wh-ink);
+  clip-path: polygon(0 50%, 16% 0, 100% 0, 100% 100%, 16% 100%);
+  transform: rotate(-18deg);
+}
