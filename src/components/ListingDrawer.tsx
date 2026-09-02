@@ -5,6 +5,7 @@ import {Banner} from '@astryxdesign/core/Banner';
 import {Button} from '@astryxdesign/core/Button';
 import {Divider} from '@astryxdesign/core/Divider';
 import {Heading} from '@astryxdesign/core/Heading';
+import {Icon} from '@astryxdesign/core/Icon';
 import {IconButton} from '@astryxdesign/core/IconButton';
 import {NumberInput} from '@astryxdesign/core/NumberInput';
 import {Spinner} from '@astryxdesign/core/Spinner';
@@ -162,7 +163,13 @@ export function ListingDrawer({
           </Text>
           <Heading level={2}>{item.title_nl ?? item.title_en ?? 'Untitled'}</Heading>
         </Stack>
-        <IconButton icon="close" label="Close listing panel" variant="ghost" size="sm" onClick={onClose} />
+        <IconButton
+          icon={<Icon icon="close" />}
+          label="Close listing panel"
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+        />
       </Stack>
 
       <Stack direction="horizontal" gap={3} vAlign="center">

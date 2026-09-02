@@ -568,7 +568,7 @@ export function InventoryScreen() {
       footer={
         // LayoutFooter sizes itself for a single bar of controls; the summary
         // is two lines per figure, so it needs the height stated.
-        <LayoutFooter hasDivider height={76} padding={3}>
+        <LayoutFooter hasDivider height={84} padding={3}>
           <Stack
             direction="horizontal"
             hAlign="between"
@@ -834,7 +834,7 @@ function buildColumns({
     {
       key: 'status',
       header: 'Status',
-      width: pixel(132),
+      width: pixel(152),
       renderCell: (row) => (
         <Selector
           label={`Status for lot ${lotLabel(row.lot_number)}`}
