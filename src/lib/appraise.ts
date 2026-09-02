@@ -8,6 +8,42 @@ import {query, type SDKUserMessage} from '@anthropic-ai/claude-agent-sdk';
 import {WORK_DIR, getAppraisalConfig} from './config';
 import {appraisalSchema, type AppraisalResult} from './schema';
 import {bucketName, supabase} from './supabase';
+import {
+  COLOURS,
+  CONDITIONS,
+  MATERIALS,
+  SHOPIFY_CATEGORIES,
+  STYLES,
+} from './taxonomy';
+
+/**
+ * The allowed values, sent with every request.
+ *
+ * These live in the user message rather than the system prompt because they are
+ * the half most likely to change — adding a category should not mean rewriting
+ * prompts/appraisal.md. The Zod schema enforces the same lists on the way back,
+ * so a value that is not here fails the job loudly instead of quietly poisoning
+ * a storefront filter.
+ */
+function vocabularyBlock(): string {
+  const categories = SHOPIFY_CATEGORIES.map(
+    (category) => `  ${category.id} = ${category.label}`,
+  ).join('\n');
+
+  return [
+    'Use EXACTLY these values for the enum fields. Copy them character for character.',
+    '',
+    `shopify_category (pick one id):\n${categories}`,
+    '',
+    `material: ${MATERIALS.join(' | ')}`,
+    '',
+    `colour: ${COLOURS.join(' | ')}`,
+    '',
+    `style: ${STYLES.join(' | ')}`,
+    '',
+    `condition_grade: ${CONDITIONS.join(' | ')}`,
+  ].join('\n');
+}
 
 const PROMPT_PATH = path.join(process.cwd(), 'prompts', 'appraisal.md');
 
@@ -28,6 +64,12 @@ export interface AppraisalInput {
   hint?: string | null;
   /** Extra instruction on a re-appraisal ("look again at the base"). */
   instruction?: string | null;
+  /**
+   * Answers the user gave to the appraiser's own questions. These ARE
+   * established fact — the person answering had the object in their hands and
+   * a torch, which beats any amount of squinting at a photograph.
+   */
+  answers?: Array<{question: string; answer: string}> | null;
 }
 
 export interface AppraisalOutcome {
@@ -89,10 +131,20 @@ export async function appraise(input: AppraisalInput): Promise<AppraisalOutcome>
 
   const lines: string[] = [
     `Appraise the object in these ${images.length} photograph${images.length === 1 ? '' : 's'}. They are all of the same object; the first is the primary shot.`,
+    vocabularyBlock(),
   ];
   if (input.hint?.trim()) {
     lines.push(
       `The person holding the object wrote: "${input.hint.trim()}". Treat it as a pointer to look at something, not as established fact.`,
+    );
+  }
+  if (input.answers?.length) {
+    // Answers outrank the photographs. Someone had the object in their hands.
+    lines.push(
+      'The person holding the object answered your previous questions. These are ESTABLISHED FACT and override anything you think you see in the photographs:\n' +
+        input.answers
+          .map((entry) => `- ${entry.question}\n  ANSWER: ${entry.answer}`)
+          .join('\n'),
     );
   }
   if (input.instruction?.trim()) {

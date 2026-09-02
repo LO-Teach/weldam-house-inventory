@@ -34,6 +34,7 @@ import {Tooltip} from '@astryxdesign/core/Tooltip';
 import {useToast} from '@astryxdesign/core/Toast';
 
 import {
+  bulkAppraise,
   bulkPatch,
   fetchItems,
   fetchMeta,
@@ -49,16 +50,24 @@ import {
   type Status,
 } from '@/src/lib/types';
 import {
+  CATEGORY_OPTIONS,
   CHANNEL_OPTIONS,
+  COLOUR_OPTIONS,
   CONFIDENCE_OPTIONS,
   ConfidenceBadge,
+  LadderPrice,
+  MATERIAL_OPTIONS,
+  MaterialCell,
   STATUS_OPTIONS,
+  STYLE_OPTIONS,
   StatusBadge,
   formatEuro,
   lotLabel,
 } from './common';
 import {InlineNumber, InlineText} from './InlineEdit';
 import {ListingDrawer} from './ListingDrawer';
+import {LotProposals} from './LotProposals';
+import {categoryLabel} from '@/src/lib/taxonomy';
 
 const PAGE_SIZE = 100;
 const ANY = '__any__';
@@ -67,7 +76,11 @@ interface Filters {
   q: string;
   status: string;
   channel: string;
-  category: string;
+  shopifyCategory: string;
+  material: string;
+  style: string;
+  colour: string;
+  owner: string;
   confidence: string;
   hasMaker: string;
   priceMin: string;
@@ -79,7 +92,11 @@ const EMPTY_FILTERS: Filters = {
   q: '',
   status: ANY,
   channel: ANY,
-  category: ANY,
+  shopifyCategory: ANY,
+  material: ANY,
+  style: ANY,
+  colour: ANY,
+  owner: ANY,
   confidence: ANY,
   hasMaker: ANY,
   priceMin: '',
@@ -105,10 +122,13 @@ export function InventoryScreen() {
   const [reloadToken, setReloadToken] = useState(0);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [drawerItem, setDrawerItem] = useState<ItemWithImages | null>(null);
-  const [meta, setMeta] = useState<{categories: string[]; lotGroups: string[]}>({
-    categories: [],
-    lotGroups: [],
-  });
+  const [meta, setMeta] = useState<{
+    categories: string[];
+    lotGroups: string[];
+    owners: string[];
+  }>({categories: [], lotGroups: [], owners: []});
+  const [isBulkAppraising, setIsBulkAppraising] = useState(false);
+  const [isLotsOpen, setIsLotsOpen] = useState(false);
 
   // Typing in the search box should not fire a request per keystroke.
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -122,7 +142,13 @@ export function InventoryScreen() {
     if (debouncedQuery.trim()) params.set('q', debouncedQuery.trim());
     if (filters.status !== ANY) params.set('status', filters.status);
     if (filters.channel !== ANY) params.set('channel', filters.channel);
-    if (filters.category !== ANY) params.set('category', filters.category);
+    if (filters.shopifyCategory !== ANY) {
+      params.set('shopifyCategory', filters.shopifyCategory);
+    }
+    if (filters.material !== ANY) params.set('material', filters.material);
+    if (filters.style !== ANY) params.set('style', filters.style);
+    if (filters.colour !== ANY) params.set('colour', filters.colour);
+    if (filters.owner !== ANY) params.set('owner', filters.owner);
     if (filters.confidence !== ANY) params.set('confidence', filters.confidence);
     if (filters.hasMaker !== ANY) params.set('hasMaker', filters.hasMaker);
     if (filters.priceMin.trim()) params.set('priceMin', filters.priceMin.trim());
@@ -244,6 +270,33 @@ export function InventoryScreen() {
     [load, mergeRow, replaceRow, toast],
   );
 
+  /**
+   * Re-run every draft through the current prompt.
+   *
+   * Editing prompts/appraisal.md does nothing to items already in the table, so
+   * without this a pricing change only applies to whatever is photographed
+   * next, and the inventory ends up carrying two generations of pricing.
+   */
+  const reappraiseDrafts = useCallback(async () => {
+    setIsBulkAppraising(true);
+    try {
+      const {queued} = await bulkAppraise({status: 'draft'});
+      toast({
+        body:
+          queued === 0
+            ? 'No drafts to re-appraise.'
+            : `${queued} draft${queued === 1 ? '' : 's'} queued. They run two at a time — watch the strip on Ingest.`,
+      });
+    } catch (caught) {
+      toast({
+        type: 'error',
+        body: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setIsBulkAppraising(false);
+    }
+  }, [toast]);
+
   const runBulk = useCallback(
     async (patch: Record<string, unknown>, description: string) => {
       const ids = [...selectedKeys];
@@ -281,6 +334,12 @@ export function InventoryScreen() {
   const isSleepers = filters.preset === 'sleepers';
 
   return (
+    <>
+    <LotProposals
+      isOpen={isLotsOpen}
+      onOpenChange={setIsLotsOpen}
+      onApplied={load}
+    />
     <Layout
       height="fill"
       header={
@@ -316,6 +375,23 @@ export function InventoryScreen() {
                         });
                       }
                     }}
+                  />
+                </Tooltip>
+                <Tooltip content="Bundle the cheap and the stalled into sellable lots. Proposes only — nothing changes until you accept one.">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    label="Propose lots"
+                    onClick={() => setIsLotsOpen(true)}
+                  />
+                </Tooltip>
+                <Tooltip content="Re-run every draft through the current prompts/appraisal.md. Do this after tuning the pricing rules — the inventory does not re-price itself.">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    label="Re-appraise drafts"
+                    isLoading={isBulkAppraising}
+                    onClick={() => void reappraiseDrafts()}
                   />
                 </Tooltip>
                 <Button
@@ -362,18 +438,62 @@ export function InventoryScreen() {
                     options={[{value: ANY, label: 'Any channel'}, ...CHANNEL_OPTIONS]}
                   />
                   <Selector
-                    label="Category"
+                    label="Product type"
                     isLabelHidden
                     size="sm"
                     variant="ghost"
                     hasSearch
-                    value={filters.category}
-                    onChange={(value) => setFilters((f) => ({...f, category: String(value)}))}
-                    options={[
-                      {value: ANY, label: 'Any category'},
-                      ...meta.categories.map((value) => ({value, label: value})),
-                    ]}
+                    value={filters.shopifyCategory}
+                    onChange={(value) =>
+                      setFilters((f) => ({...f, shopifyCategory: String(value)}))
+                    }
+                    options={[{value: ANY, label: 'Any type'}, ...CATEGORY_OPTIONS]}
                   />
+                  <Selector
+                    label="Material"
+                    isLabelHidden
+                    size="sm"
+                    variant="ghost"
+                    hasSearch
+                    value={filters.material}
+                    onChange={(value) => setFilters((f) => ({...f, material: String(value)}))}
+                    options={[{value: ANY, label: 'Any material'}, ...MATERIAL_OPTIONS]}
+                  />
+                  <Selector
+                    label="Style"
+                    isLabelHidden
+                    size="sm"
+                    variant="ghost"
+                    hasSearch
+                    value={filters.style}
+                    onChange={(value) => setFilters((f) => ({...f, style: String(value)}))}
+                    options={[{value: ANY, label: 'Any style'}, ...STYLE_OPTIONS]}
+                  />
+                  <Selector
+                    label="Colour"
+                    isLabelHidden
+                    size="sm"
+                    variant="ghost"
+                    hasSearch
+                    value={filters.colour}
+                    onChange={(value) => setFilters((f) => ({...f, colour: String(value)}))}
+                    options={[{value: ANY, label: 'Any colour'}, ...COLOUR_OPTIONS]}
+                  />
+                  {meta.owners.length > 1 ? (
+                    <Selector
+                      label="Owner"
+                      isLabelHidden
+                      size="sm"
+                      variant="ghost"
+                      hasSearch
+                      value={filters.owner}
+                      onChange={(value) => setFilters((f) => ({...f, owner: String(value)}))}
+                      options={[
+                        {value: ANY, label: 'Any owner'},
+                        ...meta.owners.map((value) => ({value, label: value})),
+                      ]}
+                    />
+                  ) : null}
                   <Selector
                     label="Confidence"
                     isLabelHidden
@@ -421,30 +541,62 @@ export function InventoryScreen() {
                   />
                 </>
               }
-              endContent={
-                <>
-                  <Tooltip content="Appraised, not certain, and something worth checking on the base. Two seconds with a torch could move the price bracket.">
-                    <Button
-                      size="sm"
-                      variant={isSleepers ? 'primary' : 'ghost'}
-                      label="Sleepers"
-                      onClick={() =>
-                        setFilters((f) => ({
-                          ...f,
-                          preset: f.preset === 'sleepers' ? '' : 'sleepers',
-                        }))
-                      }
-                    />
-                  </Tooltip>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    label="Clear"
-                    onClick={() => setFilters(EMPTY_FILTERS)}
-                  />
-                </>
-              }
             />
+
+            {/* Saved views on their own row. Nine filter dropdowns and four
+                buttons do not fit one line at any sane width, and a control
+                that scrolls off the right edge may as well not exist. */}
+            <Stack direction="horizontal" gap={2} vAlign="center" wrap="wrap">
+              <Text type="supporting" color="secondary">
+                Views
+              </Text>
+              <Tooltip content="Appraised, not certain, and something worth checking on the base. Two seconds with a torch could move the price bracket.">
+                <Button
+                  size="sm"
+                  variant={isSleepers ? 'primary' : 'ghost'}
+                  label="Sleepers"
+                  onClick={() =>
+                    setFilters((f) => ({
+                      ...f,
+                      preset: f.preset === 'sleepers' ? '' : 'sleepers',
+                    }))
+                  }
+                />
+              </Tooltip>
+              <Tooltip content="Listed long enough that the weekly markdown has bottomed out. These stop getting cheaper — bundle them into a lot or scrap them.">
+                <Button
+                  size="sm"
+                  variant={filters.preset === 'floor' ? 'primary' : 'ghost'}
+                  label="Hit the floor"
+                  onClick={() =>
+                    setFilters((f) => ({
+                      ...f,
+                      preset: f.preset === 'floor' ? '' : 'floor',
+                    }))
+                  }
+                />
+              </Tooltip>
+              <Tooltip content="The appraiser asked something nobody has answered yet. Each answer is worth a price bracket.">
+                <Button
+                  size="sm"
+                  variant={filters.preset === 'questions' ? 'primary' : 'ghost'}
+                  label="Unanswered questions"
+                  onClick={() =>
+                    setFilters((f) => ({
+                      ...f,
+                      preset: f.preset === 'questions' ? '' : 'questions',
+                    }))
+                  }
+                />
+              </Tooltip>
+              <Divider orientation="vertical" />
+              <Button
+                size="sm"
+                variant="ghost"
+                label="Clear filters"
+                onClick={() => setFilters(EMPTY_FILTERS)}
+              />
+            </Stack>
 
             {selectedCount > 0 ? (
               <Toolbar
@@ -632,6 +784,7 @@ export function InventoryScreen() {
         ) : undefined
       }
     />
+    </>
   );
 }
 
@@ -746,13 +899,21 @@ function buildColumns({
       ),
     },
     {
-      key: 'category',
-      header: 'Category',
+      key: 'shopify_category',
+      header: 'Type',
       width: proportional(1),
       renderCell: (row) => (
-        <Text color={row.category ? 'primary' : 'secondary'} maxLines={1}>
-          {row.category || '—'}
+        <Text color={row.shopify_category ? 'primary' : 'secondary'} maxLines={1}>
+          {row.shopify_category ? categoryLabel(row.shopify_category) : '—'}
         </Text>
+      ),
+    },
+    {
+      key: 'material',
+      header: 'Material',
+      width: pixel(110),
+      renderCell: (row) => (
+        <MaterialCell material={row.material} detail={row.material_detail} />
       ),
     },
     {
@@ -766,28 +927,44 @@ function buildColumns({
       ),
     },
     {
-      key: 'price_local',
-      header: 'Local',
-      width: pixel(96),
+      key: 'ask_local',
+      header: 'Ask',
+      width: pixel(100),
       align: 'end',
       renderCell: (row) => (
         <InlineNumber
-          label={`Local price for lot ${lotLabel(row.lot_number)}`}
-          value={row.price_local}
-          onCommit={(value) => updateItem(row.id, {price_local: value})}
+          label={`Local asking price for lot ${lotLabel(row.lot_number)}`}
+          value={row.ask_local}
+          onCommit={(value) => updateItem(row.id, {ask_local: value})}
         />
       ),
     },
     {
-      key: 'price_intl',
+      // What it is actually worth today once the weekly markdown is applied.
+      // Read-only: this is arithmetic, not a field — edit the ask to move it.
+      key: 'today',
+      header: 'Today',
+      width: pixel(120),
+      align: 'end',
+      renderCell: (row) => (
+        <LadderPrice
+          ask={row.ask_local}
+          floor={row.floor_local}
+          listedAt={row.listed_at}
+          isListed={row.status === 'listed'}
+        />
+      ),
+    },
+    {
+      key: 'ask_intl',
       header: 'Intl',
-      width: pixel(96),
+      width: pixel(100),
       align: 'end',
       renderCell: (row) => (
         <InlineNumber
-          label={`International price for lot ${lotLabel(row.lot_number)}`}
-          value={row.price_intl}
-          onCommit={(value) => updateItem(row.id, {price_intl: value})}
+          label={`International asking price for lot ${lotLabel(row.lot_number)}`}
+          value={row.ask_intl}
+          onCommit={(value) => updateItem(row.id, {ask_intl: value})}
         />
       ),
     },

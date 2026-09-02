@@ -9,6 +9,7 @@ import {supabase} from './supabase';
 import {
   CHANNEL_LABELS,
   STATUS_LABELS,
+  categoryLabel,
   type Item,
   type ItemFacts,
   type ItemImage,
@@ -42,21 +43,35 @@ export function renderSidecar(item: Item, images: ItemImage[]): string {
     ['Lot', lot],
     ['Title (NL)', item.title_nl],
     ['Title (EN)', item.title_en],
-    ['Category', item.category ?? facts.category],
+    ['Category', categoryLabel(item.shopify_category)],
+    ['Shopify category', item.shopify_category],
     ['Material', item.material ?? facts.material],
+    ['Material (detail)', item.material_detail ?? facts.material_detail],
+    ['Style', item.style ?? facts.style],
     ['Era', item.era ?? facts.era],
     ['Colour', item.colour ?? facts.colour],
-    ['Dimensions (cm)', item.dimensions_cm ?? facts.dimensions_cm],
+    ['Colour (detail)', item.colour_detail ?? facts.colour_detail],
+    ['Dimensions', item.dimensions_cm ?? facts.dimensions_cm],
+    ['Weight (g)', item.weight_g == null ? null : String(item.weight_g)],
     ['Maker', item.maker ?? facts.maker],
     ['Marks found', item.marks_found ?? facts.marks_found],
     ['Marks to check', item.marks_to_check ?? facts.marks_to_check],
+    ['Condition grade', item.condition_grade ?? facts.condition_grade],
     ['Condition', item.condition ?? facts.condition],
     ['Confidence', item.confidence],
     ['Channel', item.channel ? CHANNEL_LABELS[item.channel] : null],
     ['Lot group', item.lot_group],
     ['Status', STATUS_LABELS[item.status]],
-    ['Price (local)', formatEuro(item.price_local)],
-    ['Price (intl)', formatEuro(item.price_intl)],
+    ['Owner', item.owner_name],
+    ['Owner contact', item.owner_contact],
+    ['Owner split (%)', item.owner_split_pct == null ? null : String(item.owner_split_pct)],
+    ['Retail (local)', formatEuro(item.retail_local)],
+    ['Ask (local)', formatEuro(item.ask_local)],
+    ['Floor (local)', formatEuro(item.floor_local)],
+    ['Retail (intl)', formatEuro(item.retail_intl)],
+    ['Ask (intl)', formatEuro(item.ask_intl)],
+    ['Floor (intl)', formatEuro(item.floor_intl)],
+    ['Listed at', item.listed_at],
     ['Sold for', formatEuro(item.sold_price)],
     ['Sold at', item.sold_at],
     ['Created', item.created_at],
@@ -78,6 +93,14 @@ export function renderSidecar(item: Item, images: ItemImage[]): string {
 
   if (facts.reasoning) {
     lines.push('', '## Appraiser note', '', facts.reasoning);
+  }
+
+  const answered = (facts.questions ?? []).filter((q) => q.answer?.trim());
+  if (answered.length > 0) {
+    lines.push('', '## Checked by hand', '');
+    for (const question of answered) {
+      lines.push(`- **${question.question}** ${question.answer}`);
+    }
   }
 
   if (item.notes) {

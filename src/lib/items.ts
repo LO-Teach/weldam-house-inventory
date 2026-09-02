@@ -1,5 +1,6 @@
 import 'server-only';
 
+import {ladderStep} from './pricing';
 import {signPaths, supabase} from './supabase';
 import type {ListItemsQuery} from './schema';
 import type {
@@ -12,14 +13,20 @@ import type {
 const SORTABLE = new Set([
   'lot_number',
   'title_nl',
-  'category',
+  'shopify_category',
+  'material',
+  'style',
   'maker',
-  'price_local',
-  'price_intl',
+  'retail_local',
+  'ask_local',
+  'retail_intl',
+  'ask_intl',
+  'owner_name',
   'channel',
   'confidence',
   'lot_group',
   'status',
+  'listed_at',
   'created_at',
   'updated_at',
 ]);
@@ -30,8 +37,12 @@ export interface ItemListResult {
   /** Totals over the whole filtered set, not just this page. */
   summary: {
     count: number;
+    /** Sum of ask_local across the filtered set. */
     totalLocal: number;
+    /** Sum of ask_intl. */
     totalIntl: number;
+    /** Sum of retail_local — what the stock is notionally worth at full price. */
+    totalRetail: number;
     byStatus: Record<string, number>;
   };
 }
@@ -54,14 +65,32 @@ export async function listItems(query: ListItemsQuery): Promise<ItemListResult> 
   );
   if (error) throw new Error(error.message);
 
-  const items = (data ?? []) as Item[];
+  let items = (data ?? []) as Item[];
+
+  // Two presets need arithmetic Postgres was not asked for. `floor` depends on
+  // elapsed weeks against each item's own ask and floor, and `questions` on
+  // whether any question inside the facts JSON is still unanswered. Both are
+  // finished here, against a set the SQL has already narrowed.
+  if (query.preset === 'floor') {
+    items = items.filter(
+      (item) =>
+        ladderStep(item.ask_local, item.floor_local, item.listed_at).hasHitFloor,
+    );
+  }
+  if (query.preset === 'questions') {
+    items = items.filter((item) =>
+      (item.facts?.questions ?? []).some((question) => !question.answer?.trim()),
+    );
+  }
+
   const withImages = await attachImages(items);
 
   // The summary bar reports the filtered set, not the visible page — a total
-  // that changes as you scroll is worse than no total.
+  // that changes as you scroll is worse than no total. Totals are of the ASK
+  // prices: what the inventory is currently up for, not what it might retail at.
   let summaryBuilder = db
     .from('items')
-    .select('price_local, price_intl, status');
+    .select('ask_local, ask_intl, retail_local, status');
   summaryBuilder = applyFilters(summaryBuilder, query);
   const {data: summaryRows} = await summaryBuilder;
 
@@ -69,16 +98,27 @@ export async function listItems(query: ListItemsQuery): Promise<ItemListResult> 
     count: count ?? items.length,
     totalLocal: 0,
     totalIntl: 0,
+    totalRetail: 0,
     byStatus: {} as Record<string, number>,
   };
   for (const row of summaryRows ?? []) {
-    summary.totalLocal += Number(row.price_local ?? 0);
-    summary.totalIntl += Number(row.price_intl ?? 0);
+    summary.totalLocal += Number(row.ask_local ?? 0);
+    summary.totalIntl += Number(row.ask_intl ?? 0);
+    summary.totalRetail += Number(row.retail_local ?? 0);
     const status = String(row.status ?? 'draft');
     summary.byStatus[status] = (summary.byStatus[status] ?? 0) + 1;
   }
 
-  return {items: withImages, total: count ?? items.length, summary};
+  // A post-filtered preset invalidates the SQL count, so report what survived.
+  const total =
+    query.preset === 'floor' || query.preset === 'questions'
+      ? items.length
+      : (count ?? items.length);
+  if (query.preset === 'floor' || query.preset === 'questions') {
+    summary.count = items.length;
+  }
+
+  return {items: withImages, total, summary};
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- the Supabase filter
@@ -97,15 +137,32 @@ function applyFilters(builder: any, query: ListItemsQuery): any {
       .eq('status', 'appraised');
   }
 
+  if (query.preset === 'floor') {
+    // Listed long enough that the weekly markdown has bottomed out. The actual
+    // "has it hit the floor" arithmetic needs the dates, so it is finished in
+    // JS after the fetch; this just narrows to things that could have.
+    next = next.eq('status', 'listed').not('listed_at', 'is', null);
+  }
+
+  if (query.preset === 'questions') {
+    // The appraiser asked something nobody has answered yet.
+    next = next.not('facts->questions', 'is', null);
+  }
+
   if (query.status) next = next.eq('status', query.status);
   if (query.channel) next = next.eq('channel', query.channel);
   if (query.category) next = next.eq('category', query.category);
+  if (query.shopifyCategory) next = next.eq('shopify_category', query.shopifyCategory);
+  if (query.material) next = next.eq('material', query.material);
+  if (query.style) next = next.eq('style', query.style);
+  if (query.colour) next = next.eq('colour', query.colour);
+  if (query.owner) next = next.eq('owner_name', query.owner);
   if (query.confidence) next = next.eq('confidence', query.confidence);
   if (query.lotGroup) next = next.eq('lot_group', query.lotGroup);
   if (query.hasMaker === 'yes') next = next.not('maker', 'is', null);
   if (query.hasMaker === 'no') next = next.is('maker', null);
-  if (query.priceMin != null) next = next.gte('price_local', query.priceMin);
-  if (query.priceMax != null) next = next.lte('price_local', query.priceMax);
+  if (query.priceMin != null) next = next.gte('ask_local', query.priceMin);
+  if (query.priceMax != null) next = next.lte('ask_local', query.priceMax);
 
   if (query.q) {
     const term = `%${query.q.replace(/[%_,()]/g, ' ').trim()}%`;
@@ -116,6 +173,9 @@ function applyFilters(builder: any, query: ListItemsQuery): any {
         `maker.ilike.${term}`,
         `category.ilike.${term}`,
         `material.ilike.${term}`,
+        `material_detail.ilike.${term}`,
+        `style.ilike.${term}`,
+        `owner_name.ilike.${term}`,
         `marks_found.ilike.${term}`,
         `lot_group.ilike.${term}`,
         `notes.ilike.${term}`,
@@ -189,6 +249,17 @@ export async function listLotGroups(): Promise<string[]> {
     if (value) groups.add(value);
   }
   return [...groups].sort((a, b) => a.localeCompare(b));
+}
+
+/** Distinct owners, so consigned stock can be filtered and settled up. */
+export async function listOwners(): Promise<string[]> {
+  const {data} = await supabase().from('items').select('owner_name');
+  const owners = new Set<string>();
+  for (const row of data ?? []) {
+    const value = String(row.owner_name ?? '').trim();
+    if (value) owners.add(value);
+  }
+  return [...owners].sort((a, b) => a.localeCompare(b));
 }
 
 /** Distinct categories, for the inventory filter bar. */

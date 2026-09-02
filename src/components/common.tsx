@@ -1,9 +1,20 @@
 'use client';
 
 import {Badge} from '@astryxdesign/core/Badge';
+import {Stack} from '@astryxdesign/core/Stack';
 import {Text} from '@astryxdesign/core/Text';
 import {Tooltip} from '@astryxdesign/core/Tooltip';
 
+import {ladderStep} from '@/src/lib/pricing';
+
+import {
+  COLOURS,
+  CONDITION_LABELS,
+  CONDITIONS,
+  MATERIALS,
+  SHOPIFY_CATEGORIES,
+  STYLES,
+} from '@/src/lib/taxonomy';
 import {
   CHANNEL_LABELS,
   CHANNELS,
@@ -83,6 +94,80 @@ export function PriceTag({
   );
 }
 
+/**
+ * Today's price on the markdown ladder.
+ *
+ * Shows the current figure, and — once the ladder has actually moved — the
+ * original ask struck through beside it, so it is obvious at a glance which
+ * items have been sitting. An item that has bottomed out gets a warning tone:
+ * that is the cue to bundle it into a lot rather than keep discounting.
+ */
+export function LadderPrice({
+  ask,
+  floor,
+  listedAt,
+  isListed,
+}: {
+  ask: number | null | undefined;
+  floor: number | null | undefined;
+  listedAt: string | null | undefined;
+  isListed: boolean;
+}) {
+  if (ask == null) return <Text color="secondary">—</Text>;
+
+  // Before it is listed there is no clock running, so the ask is the price.
+  if (!isListed || !listedAt) {
+    return (
+      <Text hasTabularNumbers>{formatEuro(ask)}</Text>
+    );
+  }
+
+  const step = ladderStep(ask, floor, listedAt);
+  if (step.weeks === 0 || step.discount <= 0) {
+    return <Text hasTabularNumbers>{formatEuro(step.price)}</Text>;
+  }
+
+  return (
+    <Tooltip
+      content={`Listed ${step.weeks} week${step.weeks === 1 ? '' : 's'} ago — ${step.discountPct}% off the ${formatEuro(ask)} ask.${
+        step.hasHitFloor ? ' It has hit its floor: lot it or scrap it.' : ''
+      }`}
+    >
+      <Stack direction="horizontal" gap={1} vAlign="center">
+        <Text
+          hasTabularNumbers
+          weight={step.hasHitFloor ? 'semibold' : 'normal'}
+          color={step.hasHitFloor ? 'accent' : 'primary'}
+        >
+          {formatEuro(step.price)}
+        </Text>
+        <Text hasTabularNumbers type="supporting" color="secondary" hasStrikethrough>
+          {formatEuro(ask)}
+        </Text>
+      </Stack>
+    </Tooltip>
+  );
+}
+
+export function MaterialCell({
+  material,
+  detail,
+}: {
+  material: string | null | undefined;
+  detail?: string | null;
+}) {
+  if (!material) return <Text color="secondary">—</Text>;
+  // The coarse Shopify facet is what shows; the precise trade word — the one
+  // that actually sets the price — is one hover away.
+  return detail ? (
+    <Tooltip content={detail}>
+      <Text maxLines={1}>{material}</Text>
+    </Tooltip>
+  ) : (
+    <Text maxLines={1}>{material}</Text>
+  );
+}
+
 export function formatEuro(value: number | null | undefined): string {
   if (value == null) return '—';
   return new Intl.NumberFormat('nl-BE', {
@@ -108,3 +193,19 @@ export function formatBytes(bytes: number | null | undefined): string {
 export function lotLabel(lotNumber: number): string {
   return String(lotNumber).padStart(4, '0');
 }
+
+// --- option lists for the new controlled vocabularies ------------------------
+
+export const CATEGORY_OPTIONS = SHOPIFY_CATEGORIES.map((category) => ({
+  value: category.id,
+  label: category.label,
+  description: category.group,
+}));
+
+export const MATERIAL_OPTIONS = MATERIALS.map((value) => ({value, label: value}));
+export const COLOUR_OPTIONS = COLOURS.map((value) => ({value, label: value}));
+export const STYLE_OPTIONS = STYLES.map((value) => ({value, label: value}));
+export const CONDITION_OPTIONS = CONDITIONS.map((value) => ({
+  value,
+  label: CONDITION_LABELS[value],
+}));

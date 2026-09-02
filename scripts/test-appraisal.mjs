@@ -26,6 +26,8 @@ import path from 'node:path';
 
 import sharp from 'sharp';
 
+import {COLOURS, MATERIALS} from '../src/lib/taxonomy.ts';
+
 const BASE = process.env.TEST_BASE_URL || 'http://localhost:3000';
 const TIMEOUT_MS = 180_000;
 
@@ -151,7 +153,52 @@ async function main() {
     if (job?.status === 'done') {
       check('title_nl was written', typeof item?.title_nl === 'string' && item.title_nl.length > 0);
       check('title_en was written', typeof item?.title_en === 'string' && item.title_en.length > 0);
-      check('a category was assigned', typeof item?.category === 'string');
+      check(
+        'a Shopify product type was assigned',
+        typeof item?.shopify_category === 'string' && item.shopify_category.length > 0,
+        String(item?.shopify_category),
+      );
+      check(
+        'material came from the Shopify enum',
+        item?.material === null || MATERIALS.includes(item?.material),
+        String(item?.material),
+      );
+      check(
+        'colour came from the Shopify enum',
+        item?.colour === null || COLOURS.includes(item?.colour),
+        String(item?.colour),
+      );
+      // The synthetic test image is a flat rectangle, not an object, so a
+      // refusal to price it is CORRECT behaviour rather than a bug. What must
+      // not happen is a null price on something the model claims to recognise.
+      const priced =
+        typeof item?.retail_local === 'string' || typeof item?.retail_local === 'number';
+      check(
+        'priced, or explicitly held as unphotographable',
+        priced || item?.channel === 'hold' || item?.channel === 'scrap',
+        `retail ${item?.retail_local}, channel ${item?.channel}`,
+      );
+      if (!priced) {
+        console.log(
+          '      (no price: the model refused to appraise a synthetic image, which is right)',
+        );
+      }
+      check(
+        'the ask is 80% of retail, computed by the app',
+        !priced ||
+          Math.round(Number(item?.retail_local) * 0.8) === Math.round(Number(item?.ask_local)),
+        `retail ${item?.retail_local} vs ask ${item?.ask_local}`,
+      );
+      check(
+        'a floor was set so the markdown cannot slide to zero',
+        !priced || Number(item?.floor_local) > 0 || Number(item?.ask_local) === 0,
+        String(item?.floor_local),
+      );
+      check(
+        'questions were recorded for the person holding it',
+        Array.isArray(item?.facts?.questions),
+        JSON.stringify(item?.facts?.questions)?.slice(0, 120),
+      );
       check(
         'the channel is one the schema allows',
         ['local', 'ebay', 'catawiki', 'shopify', 'lot', 'hold', 'scrap'].includes(item?.channel),
@@ -186,9 +233,11 @@ async function main() {
 
       console.log('\n    What it said:');
       console.log(`      title_nl   ${item?.title_nl}`);
-      console.log(`      category   ${item?.category}`);
-      console.log(`      material   ${item?.material}`);
-      console.log(`      price      €${item?.price_local}  (intl: ${item?.price_intl ?? 'null'})`);
+      console.log(`      type       ${item?.shopify_category}`);
+      console.log(`      style      ${item?.style}`);
+      console.log(`      material   ${item?.material} / ${item?.material_detail ?? '—'}`);
+      console.log(`      retail     €${item?.retail_local} local / €${item?.retail_intl ?? 'null'} intl`);
+      console.log(`      ask        €${item?.ask_local} local / €${item?.ask_intl ?? 'null'} intl  (floor €${item?.floor_local})`);
       console.log(`      channel    ${item?.channel}`);
       console.log(`      confidence ${item?.confidence}`);
       console.log(`      to check   ${item?.marks_to_check ?? '—'}`);

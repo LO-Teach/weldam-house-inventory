@@ -2,8 +2,9 @@ import 'server-only';
 
 import {AppraisalParseError, appraise} from './appraise';
 import {getAppraisalConfig} from './config';
+import {askFromRetail, floorFromAsk} from './pricing';
 import {supabase} from './supabase';
-import type {ItemFacts} from './types';
+import {formatDimensions, type AppraisalQuestion, type ItemFacts} from './types';
 
 /**
  * One user, one machine, one dev server. That rules out Redis and BullMQ; what
@@ -17,6 +18,7 @@ interface QueueEntry {
   jobId: string;
   itemId: string;
   instruction?: string | null;
+  answers?: Array<{question: string; answer: string}> | null;
 }
 
 /**
@@ -42,10 +44,15 @@ function concurrency(): number {
   return Number.isFinite(n) && n > 0 ? Math.min(n, 8) : 2;
 }
 
+export interface EnqueueOptions {
+  instruction?: string | null;
+  answers?: Array<{question: string; answer: string}> | null;
+}
+
 /** Create the job row and put it in line. Returns the job id to poll. */
 export async function enqueueAppraisal(
   itemId: string,
-  instruction?: string | null,
+  options: EnqueueOptions = {},
 ): Promise<string> {
   const {data, error} = await supabase()
     .from('appraisal_jobs')
@@ -57,7 +64,12 @@ export async function enqueueAppraisal(
     throw new Error(`Could not queue an appraisal: ${error?.message ?? 'no row returned'}`);
   }
 
-  state.pending.push({jobId: data.id as string, itemId, instruction});
+  state.pending.push({
+    jobId: data.id as string,
+    itemId,
+    instruction: options.instruction ?? null,
+    answers: options.answers ?? null,
+  });
   void pump();
   return data.id as string;
 }
@@ -138,29 +150,63 @@ async function runJob(entry: QueueEntry): Promise<void> {
     const storagePaths = (images ?? []).map((row) => row.storage_path as string);
     const facts = (item.facts ?? {}) as ItemFacts;
 
+    // Answers given on a previous pass stay in play on every later re-run —
+    // once someone has looked at the base, the appraiser should never have to
+    // ask again.
+    const priorAnswers = (facts.questions ?? [])
+      .filter((q) => q.answer?.trim())
+      .map((q) => ({question: q.question, answer: q.answer as string}));
+    const answers = [...priorAnswers, ...(entry.answers ?? [])];
+
     const outcome = await appraise({
       lotNumber: item.lot_number as number,
       storagePaths,
       hint: facts.hint ?? null,
       instruction: entry.instruction ?? null,
+      answers: answers.length > 0 ? answers : null,
     });
 
     const result = outcome.result;
 
-    // facts is what listing copy is generated from later, so it carries the
-    // observations rather than any prose. Existing cached listings are kept.
+    // The 80% / 50% rule lives in pricing.ts and nowhere else, so the model
+    // only has to produce the one number that needs judgement.
+    const askLocal = askFromRetail(result.retail_local);
+    const askIntl = askFromRetail(result.retail_intl);
+
+    const dimensions = formatDimensions(result);
+
+    // Questions the user already answered keep their answers; genuinely new
+    // ones arrive unanswered.
+    const answeredById = new Map(
+      (facts.questions ?? [])
+        .filter((q) => q.answer?.trim())
+        .map((q) => [q.id, q.answer as string]),
+    );
+    const questions: AppraisalQuestion[] = result.questions.map((q) => ({
+      id: q.id,
+      question: q.question,
+      why: q.why,
+      answer: answeredById.get(q.id) ?? null,
+    }));
+
     const nextFacts: ItemFacts = {
       ...facts,
       material: result.material,
+      material_detail: result.material_detail,
       era: result.era,
+      style: result.style,
       colour: result.colour,
-      dimensions_cm: result.dimensions_cm,
+      colour_detail: result.colour_detail,
+      dimensions_cm: dimensions,
+      dimensions_estimated: result.dimensions_estimated,
       marks_found: result.marks_found,
       marks_to_check: result.marks_to_check,
       condition: result.condition,
-      category: result.category,
+      condition_grade: result.condition_grade,
+      shopify_category: result.shopify_category,
       maker: result.maker,
       reasoning: result.reasoning,
+      questions,
     };
 
     await db
@@ -168,20 +214,38 @@ async function runJob(entry: QueueEntry): Promise<void> {
       .update({
         title_nl: result.title_nl,
         title_en: result.title_en,
-        category: result.category,
+
+        shopify_category: result.shopify_category,
         material: result.material,
-        era: result.era,
+        material_detail: result.material_detail,
         colour: result.colour,
-        dimensions_cm: result.dimensions_cm,
+        colour_detail: result.colour_detail,
+        style: result.style,
+        era: result.era,
+
+        height_cm: result.height_cm,
+        width_cm: result.width_cm,
+        depth_cm: result.depth_cm,
+        diameter_cm: result.diameter_cm,
+        weight_g: result.weight_g,
+        dimensions_cm: dimensions,
+
         maker: result.maker,
         marks_found: result.marks_found,
         marks_to_check: result.marks_to_check,
+        condition_grade: result.condition_grade,
         condition: result.condition,
-        facts: nextFacts,
-        price_local: result.price_local,
-        price_intl: result.price_intl,
-        channel: result.channel,
         confidence: result.confidence,
+
+        retail_local: result.retail_local,
+        ask_local: askLocal,
+        floor_local: floorFromAsk(askLocal),
+        retail_intl: result.retail_intl,
+        ask_intl: askIntl,
+        floor_intl: floorFromAsk(askIntl),
+
+        facts: nextFacts,
+        channel: result.channel,
         // Still a draft. An appraisal is a proposal; Review is where a human
         // confirms it and the item becomes 'appraised'.
         status: 'draft',

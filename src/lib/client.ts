@@ -58,6 +58,7 @@ export interface ItemsResponse {
     count: number;
     totalLocal: number;
     totalIntl: number;
+    totalRetail: number;
     byStatus: Record<string, number>;
   };
 }
@@ -134,10 +135,81 @@ export function fetchQueue(): Promise<{
 export function requeueAppraisal(
   itemId: string,
   instruction?: string,
+  answers?: Array<{id: string; question: string; answer: string}>,
 ): Promise<{jobId: string}> {
   return request('/api/appraise', {
     method: 'POST',
-    body: JSON.stringify({itemId, instruction}),
+    body: JSON.stringify({itemId, instruction, answers}),
+  });
+}
+
+/**
+ * Re-appraise a whole set. The other half of the calibration loop: tuning
+ * prompts/appraisal.md does nothing to the inventory already in the table.
+ */
+export function bulkAppraise(options: {
+  ids?: string[];
+  status?: string;
+  instruction?: string;
+}): Promise<{queued: number; jobIds: string[]}> {
+  return request('/api/appraise/bulk', {
+    method: 'POST',
+    body: JSON.stringify(options),
+  });
+}
+
+/** Adds photographs to a lot that already exists — the base shot, usually. */
+export function addImages(
+  itemId: string,
+  files: File[],
+): Promise<{item: ItemWithImages; added: number; warnings: string[]}> {
+  const form = new FormData();
+  for (const file of files) form.append('files', file);
+  return request(`/api/items/${itemId}/images`, {method: 'POST', body: form});
+}
+
+// --- lots -------------------------------------------------------------------
+
+export interface LotCandidate {
+  id: string;
+  lot_number: number;
+  title_nl: string | null;
+  shopify_category: string | null;
+  material: string | null;
+  colour: string | null;
+  style: string | null;
+  era: string | null;
+  retail_local: number | null;
+  ask_local: number | null;
+  thumbUrl: string | null;
+}
+
+export interface LotProposal {
+  key: string;
+  title: string;
+  rationale: string;
+  items: LotCandidate[];
+  sumIndividual: number;
+  suggestedPrice: number;
+}
+
+export function fetchLotProposals(options: {
+  maxRetail?: number;
+  targetSize?: number;
+} = {}): Promise<{proposals: LotProposal[]}> {
+  const params = new URLSearchParams();
+  if (options.maxRetail != null) params.set('maxRetail', String(options.maxRetail));
+  if (options.targetSize != null) params.set('targetSize', String(options.targetSize));
+  return request(`/api/lots?${params.toString()}`);
+}
+
+export function applyLot(
+  lotGroup: string,
+  ids: string[],
+): Promise<{ok: true; updated: number; lotGroup: string}> {
+  return request('/api/lots', {
+    method: 'POST',
+    body: JSON.stringify({lotGroup, ids}),
   });
 }
 
@@ -237,7 +309,11 @@ export function createArchiveFolder(
   });
 }
 
-export function fetchMeta(): Promise<{categories: string[]; lotGroups: string[]}> {
+export function fetchMeta(): Promise<{
+  categories: string[];
+  lotGroups: string[];
+  owners: string[];
+}> {
   return request('/api/meta');
 }
 

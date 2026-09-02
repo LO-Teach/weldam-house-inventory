@@ -52,6 +52,9 @@ exactly where you put them.
 Each drop is treated as **one object**. Up to 12 shots, JPEG/PNG/WebP/TIFF/HEIC,
 15 MB each. Camera RAW is refused — export to JPEG first.
 
+You can add photographs to a lot later, from the Review screen — which is what
+you do when the appraiser asks for a shot of the base.
+
 For every file, the pipeline:
 
 1. writes it to a temporary name in the lot folder, then moves it into place
@@ -61,6 +64,18 @@ For every file, the pipeline:
 5. uploads only that derivative
 6. records both paths and the checksum in the database
 7. queues the appraisal against the derivative
+
+### Folder names
+
+A lot starts as `0001/` and is renamed at Confirm to carry its title:
+
+```
+0001 - Amberkleurige gegoten glazen vaas, sommerso, jaren 60/
+```
+
+Number first so the directory still sorts in lot order. The files inside keep
+their `0001_a.jpg` names forever — only the folder moves, and the database
+follows it.
 
 ### The archive folder
 
@@ -109,6 +124,58 @@ Shopify could be automated later; the drawer says which is which.
 
 ---
 
+## Pricing
+
+Six numbers, because one could not carry both "what it's worth" and "what it's
+listed at".
+
+| | |
+|---|---|
+| **retail** | what a consumer actually pays. The only figure the appraiser estimates. |
+| **ask** | 80% of retail — the launch price. Attractive, not a giveaway. |
+| **floor** | where the weekly markdown stops. |
+
+Each of those exists for **local** (2dehands, Marktplaats, the shop) and
+**international** (eBay, Etsy, Catawiki). International is now always estimated,
+even when it is lower — the decision about whether posting is worth it is yours
+to make with both numbers in front of you.
+
+We do not price to what a dealer would pay. Dealers introduce themselves with a
+lowball offer whatever the tag says, so pricing for them up front just donates
+the margin.
+
+### The markdown ladder
+
+Once an item is marked **listed**, the clock starts: **−10% a week**, compounding,
+stopping dead at the floor. The **Today** column shows the current price with the
+original ask struck through beside it.
+
+That compounding is why the floor matters — week 7 is 48% of ask, week 14 is 23%,
+week 20 is 12%. The **Hit the floor** view collects everything that has bottomed
+out, which is the moment to bundle it into a lot rather than keep discounting
+toward nothing.
+
+## Categorisation
+
+Everything a Shopify storefront needs to offer real filters:
+
+- **Product type** — a real Shopify taxonomy category (`hg-3-67` = Vases)
+- **Material** — Shopify's Material enum, plus `material_detail` free text
+- **Colour** — Shopify's Color enum, plus `colour_detail`
+- **Style** — Art Deco, Mid-century modern, Brutalist…
+- **Size** — real numbers: height, width, depth, diameter, weight
+
+The two-layer material is deliberate. Shopify has no *crystal*, *silver* or
+*pewter*, so lead crystal is `Glass` + "lead crystal". The enum drives the
+filter; the detail is the phrase that sells it.
+
+## Owners
+
+Selling on behalf of family is the normal case for an estate clearer, so every
+item carries `owner_name` (defaulting to Weldam House), a contact, and their
+split. Filter the table by owner to see what is out on consignment and what is
+owed.
+
 ## Appraisal
 
 `prompts/appraisal.md` is the actual product — the app is a wrapper around it.
@@ -117,9 +184,9 @@ picks it up. No rebuild.
 
 The rules it enforces, and the ones worth knowing when a result looks wrong:
 
-- Price what clears locally in two weeks, not what people ask
-- `price_intl` only when the item is worth >2× more abroad after shipping
-- Under €15 and not a sleeper → `channel: lot`
+- Price at consumer retail, then ask 80% of it
+- `retail_intl` is always estimated, never left null for a saleable object
+- Under €20 retail and not a sleeper → `channel: lot`
 - **No visible mark → `maker` stays null and confidence is `guessing`.** Style is
   never enough to name a maker
 - A possible sleeper with no base shot → `channel: hold`, with a specific
@@ -131,11 +198,23 @@ Output is validated with Zod. A parse failure marks the job failed and keeps the
 model's raw text, which Review shows you — a silently dropped appraisal is a lot
 you never look at again.
 
+The prompt also emits **questions** — things only someone holding the object can
+answer ("Is there a polished dimple in the centre of the base?"). Review shows
+them as a checklist; answering re-appraises with your answers as established
+fact, which is what turns a `guessing` vase into a priced one.
+
 ### Calibration
 
 After the first 30 items, search each on 2dehands, filter to sold or
-long-listed, and compare. Then adjust `prompts/appraisal.md` — **never patch
-item rows by hand.** Repeat at 100.
+long-listed, and compare. Then adjust `prompts/appraisal.md` and hit
+**Re-appraise drafts** on the Inventory screen — **never patch item rows by
+hand.** Editing the prompt does nothing to items already in the table until you
+re-run them. Repeat at 100.
+
+The calibration anchors near the top of `prompts/appraisal.md` are the fastest
+lever: a table of worked examples ("unmarked mid-century sommerso vase, 20-25cm
+→ €55 local, €90 intl"). Correct those against what things actually fetch and
+every future appraisal moves with them.
 
 ---
 
@@ -148,6 +227,7 @@ npm run check            # typecheck + lint
 
 npm run test:pipeline    # file pipeline on throwaway files (dev server must be up)
 npm run test:appraisal   # ingest -> appraise -> listing -> sidecar, end to end
+npm run test:pricing     # the price ladder and markdown arithmetic
 npm run verify:agent     # proves the Agent SDK works with no API key
 
 npm run theme:build      # rebuild src/theme/built/ after editing the theme

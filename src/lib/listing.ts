@@ -6,6 +6,7 @@ import {getAppraisalConfig} from './config';
 import {extractJson} from './appraise';
 import {
   LISTING_CHANNEL_META,
+  categoryLabel,
   type Item,
   type ItemFacts,
   type ListingChannel,
@@ -75,21 +76,31 @@ export async function generateListingCopy(
   const facts = (item.facts ?? {}) as ItemFacts;
   const meta = LISTING_CHANNEL_META[channel];
 
+  // The ask price, not retail and not the floor: what the listing goes up at.
   const suggestedPrice =
     channel === '2dehands' || channel === 'marktplaats'
-      ? item.price_local
-      : (item.price_intl ?? item.price_local);
+      ? item.ask_local
+      : (item.ask_intl ?? item.ask_local);
 
   const factSheet = {
     object_nl: item.title_nl,
     object_en: item.title_en,
-    category: item.category ?? facts.category ?? null,
+    category: categoryLabel(item.shopify_category) ?? item.category ?? null,
     material: item.material ?? facts.material ?? null,
+    // The precise trade word — "lead crystal", "sommerso cased glass". Usually
+    // the most saleable phrase on the record, so it goes in ahead of the coarse
+    // Shopify facet.
+    material_detail: item.material_detail ?? facts.material_detail ?? null,
+    style: item.style ?? facts.style ?? null,
     era: item.era ?? facts.era ?? null,
     colour: item.colour ?? facts.colour ?? null,
+    colour_detail: item.colour_detail ?? facts.colour_detail ?? null,
     dimensions_cm: item.dimensions_cm ?? facts.dimensions_cm ?? null,
+    dimensions_are_estimated: facts.dimensions_estimated ?? null,
+    weight_g: item.weight_g,
     maker: item.maker ?? facts.maker ?? null,
     marks_found: item.marks_found ?? facts.marks_found ?? null,
+    condition_grade: item.condition_grade ?? facts.condition_grade ?? null,
     condition: item.condition ?? facts.condition ?? null,
     confidence: item.confidence,
     suggested_price_eur: suggestedPrice,

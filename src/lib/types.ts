@@ -3,6 +3,25 @@
  * nothing in here may touch node: modules or secrets.
  */
 
+export {
+  MATERIALS,
+  COLOURS,
+  STYLES,
+  CONDITIONS,
+  CONDITION_LABELS,
+  SHOPIFY_CATEGORIES,
+  CATEGORY_IDS,
+  categoryById,
+  categoryLabel,
+} from './taxonomy';
+export type {
+  Material,
+  Colour,
+  Style,
+  ConditionGrade,
+  ShopifyCategory,
+} from './taxonomy';
+
 export const CHANNELS = [
   'local',
   'ebay',
@@ -46,30 +65,87 @@ export interface ItemImageWithUrl extends ItemImage {
   url: string | null;
 }
 
+/**
+ * A thing the appraiser wants checked by the person holding the object.
+ * Answering one is what turns `guessing` into `certain` and moves a price
+ * bracket, so the answers are fed straight back into a re-appraisal.
+ */
+export interface AppraisalQuestion {
+  id: string;
+  question: string;
+  why: string | null;
+  /** Filled in on the Review screen. Null until answered. */
+  answer?: string | null;
+}
+
 export interface Item {
   id: string;
   lot_number: number;
   title_nl: string | null;
   title_en: string | null;
+
+  // --- categorisation ------------------------------------------------------
+  /** Legacy free-text category. Superseded by shopify_category. */
   category: string | null;
+  /** Shopify taxonomy id, e.g. 'hg-3-67'. Drives the storefront filter. */
+  shopify_category: string | null;
+  /** Shopify Material enum value — coarse, for filtering. */
   material: string | null;
-  era: string | null;
+  /** Free text: 'lead crystal', 'sommerso cased glass'. Often sets the price. */
+  material_detail: string | null;
+  /** Shopify Color enum value. */
   colour: string | null;
+  colour_detail: string | null;
+  /** Period/movement, e.g. 'Mid-century modern'. */
+  style: string | null;
+  era: string | null;
+
+  // --- dimensions ----------------------------------------------------------
+  height_cm: number | null;
+  width_cm: number | null;
+  depth_cm: number | null;
+  diameter_cm: number | null;
+  weight_g: number | null;
+  /** Human-readable summary, derived from the numbers above. */
   dimensions_cm: string | null;
+
+  // --- identification ------------------------------------------------------
   maker: string | null;
   marks_found: string | null;
   marks_to_check: string | null;
+  condition_grade: string | null;
   condition: string | null;
-  facts: ItemFacts | null;
-  price_local: number | null;
-  price_intl: number | null;
-  channel: Channel | null;
   confidence: Confidence | null;
+
+  // --- the price ladder ----------------------------------------------------
+  /** What a consumer pays. The judgement everything else derives from. */
+  retail_local: number | null;
+  /** Launch price, 80% of retail. */
+  ask_local: number | null;
+  /** Where the weekly markdown stops. */
+  floor_local: number | null;
+  retail_intl: number | null;
+  ask_intl: number | null;
+  floor_intl: number | null;
+  /** When the markdown clock started. */
+  listed_at: string | null;
+
+  // --- consignment ---------------------------------------------------------
+  owner_name: string;
+  owner_contact: string | null;
+  owner_split_pct: number | null;
+  owner_notes: string | null;
+
+  // --- workflow ------------------------------------------------------------
+  facts: ItemFacts | null;
+  channel: Channel | null;
   lot_group: string | null;
   status: Status;
   sold_price: number | null;
   sold_at: string | null;
   notes: string | null;
+  /** Folder name on disk under archive/. Renamed to include the title. */
+  archive_folder: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -80,23 +156,31 @@ export interface ItemWithImages extends Item {
 
 /**
  * `facts` is the source of truth listing copy is generated from. It holds what
- * the appraiser observed, plus whatever the listing generator has cached — never
- * prose the user is expected to keep in sync by hand.
+ * the appraiser observed, plus whatever the listing generator has cached —
+ * never prose the user is expected to keep in sync by hand.
  */
 export interface ItemFacts {
   material?: string | null;
+  material_detail?: string | null;
   era?: string | null;
+  style?: string | null;
   colour?: string | null;
+  colour_detail?: string | null;
   dimensions_cm?: string | null;
+  dimensions_estimated?: boolean | null;
   marks_found?: string | null;
   marks_to_check?: string | null;
   condition?: string | null;
+  condition_grade?: string | null;
   category?: string | null;
+  shopify_category?: string | null;
   maker?: string | null;
   /** One line, shown on hover only. Why the appraiser landed where it did. */
   reasoning?: string | null;
   /** Free-text nudge the user typed at ingest. Never treated as fact. */
   hint?: string | null;
+  /** What the appraiser wants checked, and the answers once given. */
+  questions?: AppraisalQuestion[];
   /** Per-channel listing copy, cached so it survives a reload. */
   listings?: Partial<Record<ListingChannel, ListingCopy>>;
 }
@@ -133,9 +217,9 @@ export const LISTING_CHANNEL_META: Record<
   {
     label: string;
     language: 'nl' | 'en';
-    /** eBay caps at 80. The others are softer, but long titles get truncated in list views. */
+    /** eBay caps at 80. The others are softer, but long titles get truncated. */
     titleMaxChars: number;
-    /** Where the user finishes the job by hand. No Dutch marketplace has a listing API. */
+    /** Where the user finishes the job by hand. No Dutch marketplace has an API. */
     newListingUrl: string;
     /** Shown in the drawer so it is obvious which buttons can and cannot automate. */
     note: string;
@@ -221,3 +305,27 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
   done: 'Ready',
   failed: 'Failed',
 };
+
+/** Builds the human-readable dimension summary from the numeric fields. */
+export function formatDimensions(item: {
+  height_cm?: number | null;
+  width_cm?: number | null;
+  depth_cm?: number | null;
+  diameter_cm?: number | null;
+}): string | null {
+  const n = (value: number | null | undefined) =>
+    value == null ? null : String(Number(value)).replace(/\.0$/, '');
+
+  const height = n(item.height_cm);
+  const diameter = n(item.diameter_cm);
+  const width = n(item.width_cm);
+  const depth = n(item.depth_cm);
+
+  if (diameter && height) return `${height} cm high x ${diameter} cm diameter`;
+  if (diameter) return `${diameter} cm diameter`;
+
+  const box = [height, width, depth].filter(Boolean);
+  if (box.length === 3) return `${box.join(' x ')} cm (h x w x d)`;
+  if (box.length > 0) return `${box.join(' x ')} cm`;
+  return null;
+}

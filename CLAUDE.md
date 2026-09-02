@@ -46,12 +46,50 @@ through the token bridge (`bg-surface`, `text-primary`, `rounded-lg`,
   hue tokens are re-toned into the Weldam range in the theme, and purple/pink are
   deliberately re-pointed at the neutral ramp.
 
+## Pricing — the shape of it
+
+Six numbers per item, not one. Per market (local / intl):
+
+- `retail_*` — what a consumer pays. The ONLY figure the model estimates.
+- `ask_*` — 80% of retail. Computed in `src/lib/pricing.ts`, never by the model.
+- `floor_*` — 50% of ask. Where the weekly markdown stops.
+
+Then `ask x 0.9^weeks_listed`, clamped at the floor. `listed_at` starts that
+clock on the transition into `listed` and is never reset by a later save.
+
+We do NOT price to what a dealer would pay — dealers lowball regardless, so
+pricing for them just gives away the margin. If you find yourself adding a
+"would a dealer buy this" heuristic anywhere, that is the bug that made every
+price come out at a third of what it should be.
+
+`src/lib/pricing.ts` is the single home of the 80% / 50% / 10% rules.
+`npm run test:pricing` pins them.
+
+## Controlled vocabularies
+
+`src/lib/taxonomy.ts` holds real Shopify taxonomy values — category IDs, the
+Material enum and the Color enum — plus our own Style and condition grades.
+These drive storefront filters, so:
+
+- The Zod schema enforces them; an invented value fails the job loudly rather
+  than quietly poisoning a facet.
+- Two layers on purpose: `material` is the coarse Shopify facet, `material_detail`
+  is free text for the trade word that actually sets the price. Shopify has no
+  "lead crystal", "silver plate" or "pewter" — do not invent enum values to work
+  around that.
+- Widening a list is a one-line change. Do that rather than going off-list.
+
 ## Appraisal
 
-- `prompts/appraisal.md` is hand-maintained and is the actual product. **Do not
-  rewrite it.** It is read from disk on every run, so it can be tuned without a
-  rebuild.
-- Calibration happens by editing that file, never by patching item rows by hand.
+- `prompts/appraisal.md` is hand-maintained and is the actual product. Do not
+  regenerate it wholesale. It is read from disk on every run, so it can be tuned
+  without a rebuild.
+- Calibration happens by editing that file, then **Re-appraise drafts** on the
+  Inventory screen — never by patching item rows by hand. Editing the prompt
+  does nothing to items already in the table.
+- The appraiser emits `questions`: things only someone holding the object can
+  answer. Answers are fed back as established fact and outrank the photographs.
+  They persist across re-runs, so nobody re-checks a base twice.
 - The Agent SDK authenticates against the local Claude Code subscription with no
   `ANTHROPIC_API_KEY` set. Verified by `npm run verify:agent` — re-run that if
   appraisals start failing on auth.
@@ -66,7 +104,11 @@ through the token bridge (`bg-surface`, `text-primary`, `rounded-lg`,
   just created. If you find yourself adding an `fs.rm` or `fs.unlink` anywhere
   else, stop.
 - Originals under the archive root are write-once. Never modify, rename, or
-  delete one.
+  delete one. The FOLDER around them is renamed once, at Confirm, to carry the
+  title — `0001 - Glazen vaas, jaren 60`. That moves `archive_path` on every
+  image row with it; see `moveArchivePaths` in the item PATCH route.
+- Photographs can be added to an existing lot (`POST /api/items/[id]/images`).
+  Suffixes continue from what is there, so a lot never gets two `0001_a.jpg`.
 - Never write to the archive if the readiness check fails. Do not fall back to
   another directory. This is what makes it safe to point the archive root at an
   external drive: an unplugged drive becomes a visible error rather than half an
@@ -85,6 +127,8 @@ live dev server and clean up after themselves.
   **Run it after any change to `src/lib/pipeline.ts`.**
 - `npm run test:appraisal` — ingest → queue → Agent SDK → Zod → database →
   listing copy → sidecar. A plumbing test, not a calibration test.
+- `npm run test:pricing` — the price ladder, imported from the real module via
+  Node type stripping so the rules under test cannot drift.
 - `npm run verify:agent` — proves the SDK authenticates with no API key.
 
 Both test scripts create real rows and then delete them. If one is interrupted,

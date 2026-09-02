@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const {itemId, instruction} = parsed.data;
+    const {itemId, instruction, answers} = parsed.data;
 
     const {data: item} = await supabase()
       .from('items')
@@ -27,7 +27,10 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
     if (!item) return jsonError('No such item.', 404);
 
-    const jobId = await enqueueAppraisal(itemId, instruction ?? null);
+    const jobId = await enqueueAppraisal(itemId, {
+      instruction: instruction ?? null,
+      answers: answers?.map((a) => ({question: a.question, answer: a.answer})) ?? null,
+    });
     return Response.json({jobId, queue: queueDepth()}, {status: 202});
   } catch (error) {
     return handleRouteError('POST /api/appraise', error);

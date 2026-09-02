@@ -26,29 +26,38 @@ import {TextArea} from '@astryxdesign/core/TextArea';
 import {TextInput} from '@astryxdesign/core/TextInput';
 import {Tooltip} from '@astryxdesign/core/Tooltip';
 import {useToast} from '@astryxdesign/core/Toast';
-
 import {
+  addImages,
   fetchItem,
   fetchItems,
   fetchMeta,
   patchItem,
   requeueAppraisal,
 } from '@/src/lib/client';
+import {AddPhotos, PriceLadderFields, QuestionChecklist} from './ReviewFields';
 import type {
   AppraisalJob,
+  AppraisalQuestion,
   Channel,
   Confidence,
   ItemWithImages,
 } from '@/src/lib/types';
 import {
+  CATEGORY_OPTIONS,
   CHANNEL_OPTIONS,
+  COLOUR_OPTIONS,
+  CONDITION_OPTIONS,
   CONFIDENCE_OPTIONS,
   ConfidenceBadge,
+  MATERIAL_OPTIONS,
+  STYLE_OPTIONS,
   lotLabel,
 } from './common';
 
 /** One stable empty array, so an item with no images does not re-run memos. */
 const NO_IMAGES: ItemWithImages['images'] = [];
+
+const NO_QUESTIONS: AppraisalQuestion[] = [];
 
 /**
  * One item at a time, keyboard-driven. Hundreds of these get processed in a
@@ -57,7 +66,6 @@ const NO_IMAGES: ItemWithImages['images'] = [];
  */
 export function ReviewScreen() {
   const toast = useToast();
-
   const [queue, setQueue] = useState<ItemWithImages[] | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [index, setIndex] = useState(0);
@@ -65,7 +73,7 @@ export function ReviewScreen() {
   const [isZoomed, setIsZoomed] = useState(false);
   const [lotGroups, setLotGroups] = useState<string[]>([]);
   const [isReappraising, setIsReappraising] = useState(false);
-
+  const [isAttaching, setIsAttaching] = useState(false);
   useEffect(() => {
     let cancelled = false;
     const params = new URLSearchParams({
@@ -92,7 +100,6 @@ export function ReviewScreen() {
       cancelled = true;
     };
   }, [reloadToken, toast]);
-
   useEffect(() => {
     let cancelled = false;
     fetchMeta().then(
@@ -105,7 +112,6 @@ export function ReviewScreen() {
       cancelled = true;
     };
   }, [reloadToken]);
-
   const isLoading = queue === null;
   const rows = queue ?? [];
   const current = rows[index] ?? null;
@@ -150,7 +156,6 @@ export function ReviewScreen() {
   const job = current && detail?.id === current.id ? detail.job : null;
   const imageIndex = current && gallery?.id === current.id ? gallery.index : 0;
   const reappraiseNote = current && note?.id === current.id ? note.text : '';
-
   const setDraft = useCallback(
     (next: ItemWithImages) => setEdits({id: next.id, item: next}),
     [],
@@ -172,7 +177,6 @@ export function ReviewScreen() {
     },
     [current],
   );
-
   const advance = useCallback(
     (delta: number) => {
       setIndex((currentIndex) => {
@@ -190,7 +194,6 @@ export function ReviewScreen() {
     setQueue((existing) => (existing ?? []).filter((_, i) => i !== index));
     setIndex((currentIndex) => Math.min(currentIndex, Math.max(0, rows.length - 2)));
   }, [index, rows.length]);
-
   const save = useCallback(
     async (patch: Record<string, unknown>, {removeFromQueue = false} = {}) => {
       if (!draft) return;
@@ -225,27 +228,110 @@ export function ReviewScreen() {
         title_nl: draft.title_nl,
         title_en: draft.title_en,
         category: draft.category,
+        shopify_category: draft.shopify_category,
         material: draft.material,
-        era: draft.era,
+        material_detail: draft.material_detail,
         colour: draft.colour,
+        colour_detail: draft.colour_detail,
+        style: draft.style,
+        era: draft.era,
+        height_cm: draft.height_cm,
+        width_cm: draft.width_cm,
+        depth_cm: draft.depth_cm,
+        diameter_cm: draft.diameter_cm,
+        weight_g: draft.weight_g,
         dimensions_cm: draft.dimensions_cm,
         maker: draft.maker,
         marks_found: draft.marks_found,
         marks_to_check: draft.marks_to_check,
+        condition_grade: draft.condition_grade,
         condition: draft.condition,
-        price_local: draft.price_local,
-        price_intl: draft.price_intl,
+        retail_local: draft.retail_local,
+        ask_local: draft.ask_local,
+        floor_local: draft.floor_local,
+        retail_intl: draft.retail_intl,
+        ask_intl: draft.ask_intl,
+        floor_intl: draft.floor_intl,
+        owner_name: draft.owner_name,
+        owner_contact: draft.owner_contact,
+        owner_split_pct: draft.owner_split_pct,
         channel: draft.channel,
         confidence: draft.confidence,
         lot_group: draft.lot_group,
         notes: draft.notes,
+        facts: draft.facts as unknown as Record<string, unknown>,
         status: 'appraised',
       },
       {removeFromQueue: true},
     );
     toast({body: `Lot ${lotLabel(draft.lot_number)} confirmed.`});
   }, [draft, save, toast]);
+  const questions = draft?.facts?.questions ?? NO_QUESTIONS;
 
+  /**
+   * Sends the answers back as established fact and re-runs the appraisal.
+   * Saves them first, so a failed re-run does not lose what you just checked.
+   */
+  const reappraiseWithAnswers = useCallback(async () => {
+    if (!draft) return;
+    const answered = questions.filter((question) => question.answer?.trim());
+    if (answered.length === 0) return;
+    setIsReappraising(true);
+    try {
+      await patchItem(draft.id, {
+        facts: {...(draft.facts ?? {}), questions} as never,
+      });
+      await requeueAppraisal(
+        draft.id,
+        undefined,
+        answered.map((question) => ({
+          id: question.id,
+          question: question.question,
+          answer: question.answer as string,
+        })),
+      );
+      toast({
+        body: `Lot ${lotLabel(draft.lot_number)} re-appraised with ${answered.length} answer${answered.length === 1 ? '' : 's'}. It will come back shortly.`,
+      });
+      advance(1);
+    } catch (caught) {
+      toast({
+        type: 'error',
+        body: caught instanceof Error ? caught.message : String(caught),
+      });
+    } finally {
+      setIsReappraising(false);
+    }
+  }, [draft, questions, advance, toast]);
+
+  /** Adds photographs to this lot — the base shot the appraiser asked for. */
+  const attachPhotos = useCallback(
+    async (files: File[]) => {
+      if (!draft || files.length === 0) return;
+      setIsAttaching(true);
+      try {
+        const {item, added, warnings} = await addImages(draft.id, files);
+        setDraft(item);
+        setQueue((existing) =>
+          (existing ?? []).map((row) => (row.id === item.id ? item : row)),
+        );
+        toast({
+          body: `${added} photograph${added === 1 ? '' : 's'} added to lot ${lotLabel(draft.lot_number)}. Re-appraise to use them.`,
+        });
+        for (const warning of warnings) {
+          toast({type: 'error', body: warning, isAutoHide: false});
+        }
+      } catch (caught) {
+        toast({
+          type: 'error',
+          body: caught instanceof Error ? caught.message : String(caught),
+        });
+      } finally {
+        setIsAttaching(false);
+      }
+    },
+    [draft, setDraft, toast],
+  );
   const reappraise = useCallback(async () => {
     if (!draft) return;
     setIsReappraising(true);
@@ -263,7 +349,6 @@ export function ReviewScreen() {
       setIsReappraising(false);
     }
   }, [draft, reappraiseNote, setReappraiseNote, advance, toast]);
-
   const images = draft?.images ?? NO_IMAGES;
 
   // Keyboard: J/K walk the queue, Enter confirms, R re-appraises, arrows page
@@ -278,13 +363,11 @@ export function ReviewScreen() {
         target?.isContentEditable === true ||
         target?.getAttribute('role') === 'combobox';
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-
       if (event.key === 'Escape' && isZoomed) {
         setIsZoomed(false);
         return;
       }
       if (isTyping) return;
-
       switch (event.key) {
         case 'j':
         case 'J':
@@ -321,11 +404,9 @@ export function ReviewScreen() {
           break;
       }
     };
-
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [advance, confirm, reappraise, setImageIndex, images.length, isZoomed]);
-
   const lightboxMedia = useMemo(
     () =>
       images
@@ -337,7 +418,6 @@ export function ReviewScreen() {
         })),
     [images],
   );
-
   if (isLoading) {
     return (
       <Section padding={8}>
@@ -348,7 +428,6 @@ export function ReviewScreen() {
       </Section>
     );
   }
-
   if (!draft) {
     return (
       <Section padding={8}>
@@ -365,12 +444,10 @@ export function ReviewScreen() {
       </Section>
     );
   }
-
   const active = images[imageIndex] ?? images[0];
   const isFailed = job?.status === 'failed';
   const isPending = job?.status === 'queued' || job?.status === 'running';
   const notAppraisedYet = !draft.title_nl && !draft.title_en;
-
   return (
     <>
       <Layout
@@ -447,7 +524,6 @@ export function ReviewScreen() {
                   <Text color="secondary">No web copy available for this lot.</Text>
                 </Section>
               )}
-
               {images.length > 1 ? (
                 <Stack direction="horizontal" gap={2} wrap="wrap">
                   {images.map((image, i) => (
@@ -472,11 +548,13 @@ export function ReviewScreen() {
                   ))}
                 </Stack>
               ) : null}
-
-              <Text type="supporting" color="secondary">
-                Click to zoom — mark shots need real magnification.{' '}
-                {images.length > 1 ? 'Arrow keys page the gallery.' : ''}
-              </Text>
+              <Stack direction="horizontal" gap={3} vAlign="center" hAlign="between" wrap="wrap">
+                <Text type="supporting" color="secondary">
+                  Click to zoom — mark shots need real magnification.{' '}
+                  {images.length > 1 ? 'Arrow keys page the gallery.' : ''}
+                </Text>
+                <AddPhotos onFiles={(files) => void attachPhotos(files)} isBusy={isAttaching} />
+              </Stack>
             </Stack>
           </LayoutContent>
         }
@@ -492,7 +570,6 @@ export function ReviewScreen() {
                   description={draft.marks_to_check}
                 />
               ) : null}
-
               {isFailed ? (
                 <Banner
                   status="error"
@@ -506,7 +583,25 @@ export function ReviewScreen() {
                   />
                 </Banner>
               ) : null}
-
+              {/* The appraiser had a photograph; you have the object and a
+                  torch. Answering these is what turns "guessing" into a price
+                  bracket, so they sit above the fields, not below them. */}
+              {questions.length > 0 ? (
+                <QuestionChecklist
+                  questions={questions}
+                  onAnswer={(id, answer) => {
+                    const next = questions.map((question) =>
+                      question.id === id ? {...question, answer} : question,
+                    );
+                    setDraft({
+                      ...draft,
+                      facts: {...(draft.facts ?? {}), questions: next},
+                    });
+                  }}
+                  onSubmit={() => void reappraiseWithAnswers()}
+                  isBusy={isReappraising}
+                />
+              ) : null}
               {isPending ? (
                 <Banner
                   status="info"
@@ -520,7 +615,6 @@ export function ReviewScreen() {
                   description="Fill the fields by hand, or send it to the appraiser with the button at the bottom."
                 />
               ) : null}
-
               <Stack direction="vertical" gap={3}>
                 <TextInput
                   label="Title (NL)"
@@ -533,47 +627,122 @@ export function ReviewScreen() {
                   value={draft.title_en ?? ''}
                   onChange={(value) => setDraft({...draft, title_en: value || null})}
                 />
-
+                <Selector
+                  label="Product type"
+                  hasSearch
+                  value={draft.shopify_category ?? ''}
+                  onChange={(value) =>
+                    setDraft({...draft, shopify_category: String(value) || null})
+                  }
+                  options={CATEGORY_OPTIONS}
+                  description="Shopify category — this is what customers filter by."
+                />
                 <Stack direction="horizontal" gap={3}>
-                  <TextInput
-                    label="Category"
-                    value={draft.category ?? ''}
-                    onChange={(value) => setDraft({...draft, category: value || null})}
+                  <Selector
+                    label="Material"
+                    hasSearch
+                    value={draft.material ?? ''}
+                    onChange={(value) => setDraft({...draft, material: String(value) || null})}
+                    options={MATERIAL_OPTIONS}
                   />
                   <TextInput
-                    label="Material"
-                    value={draft.material ?? ''}
-                    onChange={(value) => setDraft({...draft, material: value || null})}
+                    label="Material detail"
+                    value={draft.material_detail ?? ''}
+                    onChange={(value) => setDraft({...draft, material_detail: value || null})}
+                    description="lead crystal, sommerso cased glass…"
                   />
                 </Stack>
-
                 <Stack direction="horizontal" gap={3}>
+                  <Selector
+                    label="Colour"
+                    hasSearch
+                    value={draft.colour ?? ''}
+                    onChange={(value) => setDraft({...draft, colour: String(value) || null})}
+                    options={COLOUR_OPTIONS}
+                  />
+                  <TextInput
+                    label="Colour detail"
+                    value={draft.colour_detail ?? ''}
+                    onChange={(value) => setDraft({...draft, colour_detail: value || null})}
+                    description="amber over clear…"
+                  />
+                </Stack>
+                <Stack direction="horizontal" gap={3}>
+                  <Selector
+                    label="Style"
+                    hasSearch
+                    value={draft.style ?? ''}
+                    onChange={(value) => setDraft({...draft, style: String(value) || null})}
+                    options={STYLE_OPTIONS}
+                  />
                   <TextInput
                     label="Era"
                     value={draft.era ?? ''}
                     onChange={(value) => setDraft({...draft, era: value || null})}
-                  />
-                  <TextInput
-                    label="Colour"
-                    value={draft.colour ?? ''}
-                    onChange={(value) => setDraft({...draft, colour: value || null})}
+                    description="1960s, late 19th century…"
                   />
                 </Stack>
-
-                <Stack direction="horizontal" gap={3}>
-                  <TextInput
-                    label="Dimensions (cm)"
-                    value={draft.dimensions_cm ?? ''}
-                    onChange={(value) => setDraft({...draft, dimensions_cm: value || null})}
+                {/* Numbers, not prose — the storefront filters on size, and the
+                    international price depends on what it costs to post. */}
+                <Stack direction="horizontal" gap={2} wrap="wrap">
+                  <NumberInput
+                    label="Height"
+                    units="cm"
+                    min={0}
+                    width={110}
+                    value={draft.height_cm}
+                    onChange={(value) =>
+                      setDraft({...draft, height_cm: Number.isFinite(value) ? value : null})
+                    }
                   />
-                  <TextInput
-                    label="Maker"
-                    value={draft.maker ?? ''}
-                    onChange={(value) => setDraft({...draft, maker: value || null})}
-                    description="Only from a mark you can read."
+                  <NumberInput
+                    label="Width"
+                    units="cm"
+                    min={0}
+                    width={110}
+                    value={draft.width_cm}
+                    onChange={(value) =>
+                      setDraft({...draft, width_cm: Number.isFinite(value) ? value : null})
+                    }
+                  />
+                  <NumberInput
+                    label="Depth"
+                    units="cm"
+                    min={0}
+                    width={110}
+                    value={draft.depth_cm}
+                    onChange={(value) =>
+                      setDraft({...draft, depth_cm: Number.isFinite(value) ? value : null})
+                    }
+                  />
+                  <NumberInput
+                    label="Diameter"
+                    units="cm"
+                    min={0}
+                    width={110}
+                    value={draft.diameter_cm}
+                    onChange={(value) =>
+                      setDraft({...draft, diameter_cm: Number.isFinite(value) ? value : null})
+                    }
+                  />
+                  <NumberInput
+                    label="Weight"
+                    units="g"
+                    min={0}
+                    width={120}
+                    isIntegerOnly
+                    value={draft.weight_g}
+                    onChange={(value) =>
+                      setDraft({...draft, weight_g: Number.isFinite(value) ? value : null})
+                    }
                   />
                 </Stack>
-
+                <TextInput
+                  label="Maker"
+                  value={draft.maker ?? ''}
+                  onChange={(value) => setDraft({...draft, maker: value || null})}
+                  description="Only from a mark you can read."
+                />
                 <TextInput
                   label="Marks found"
                   value={draft.marks_found ?? ''}
@@ -585,39 +754,24 @@ export function ReviewScreen() {
                   onChange={(value) => setDraft({...draft, marks_to_check: value || null})}
                   description="Clear it once you have looked."
                 />
+                <Selector
+                  label="Condition grade"
+                  value={draft.condition_grade ?? ''}
+                  onChange={(value) =>
+                    setDraft({...draft, condition_grade: String(value) || null})
+                  }
+                  options={CONDITION_OPTIONS}
+                />
                 <TextArea
-                  label="Condition"
+                  label="Condition notes"
                   rows={2}
                   value={draft.condition ?? ''}
                   onChange={(value) => setDraft({...draft, condition: value || null})}
+                  description="Only what is visible. Name the damage and where it is."
                 />
               </Stack>
-
               <Divider />
-
-              <Stack direction="horizontal" gap={3}>
-                <NumberInput
-                  label="Price (local)"
-                  units="EUR"
-                  min={0}
-                  value={draft.price_local}
-                  onChange={(value) =>
-                    setDraft({...draft, price_local: Number.isFinite(value) ? value : null})
-                  }
-                  description="What clears in two weeks."
-                />
-                <NumberInput
-                  label="Price (international)"
-                  units="EUR"
-                  min={0}
-                  value={draft.price_intl}
-                  onChange={(value) =>
-                    setDraft({...draft, price_intl: Number.isFinite(value) ? value : null})
-                  }
-                  description="Only if worth 2x more abroad."
-                />
-              </Stack>
-
+              <PriceLadderFields draft={draft} setDraft={setDraft} />
               {draft.facts?.reasoning ? (
                 <Tooltip content={draft.facts.reasoning}>
                   <Text type="supporting" color="secondary">
@@ -625,7 +779,6 @@ export function ReviewScreen() {
                   </Text>
                 </Tooltip>
               ) : null}
-
               <Stack direction="horizontal" gap={3}>
                 <Selector
                   label="Channel"
@@ -642,7 +795,6 @@ export function ReviewScreen() {
                   options={CONFIDENCE_OPTIONS}
                 />
               </Stack>
-
               {draft.channel === 'lot' ? (
                 <Stack direction="vertical" gap={2}>
                   <TextInput
@@ -666,16 +818,48 @@ export function ReviewScreen() {
                   ) : null}
                 </Stack>
               ) : null}
-
+              <Divider />
+              {/* Consignment. An estate clearer sells other people's things
+                  constantly, and "whose was this again?" six months later is
+                  not a question the books should have to guess at. */}
+              <Stack direction="horizontal" gap={3}>
+                <TextInput
+                  label="Owner"
+                  value={draft.owner_name ?? ''}
+                  onChange={(value) =>
+                    setDraft({...draft, owner_name: value || 'Weldam House'})
+                  }
+                  description="Weldam House for your own stock."
+                />
+                <NumberInput
+                  label="Their share"
+                  units="%"
+                  min={0}
+                  max={100}
+                  width={130}
+                  value={draft.owner_split_pct}
+                  onChange={(value) =>
+                    setDraft({
+                      ...draft,
+                      owner_split_pct: Number.isFinite(value) ? value : null,
+                    })
+                  }
+                />
+              </Stack>
+              {draft.owner_name && draft.owner_name !== 'Weldam House' ? (
+                <TextInput
+                  label="Owner contact"
+                  value={draft.owner_contact ?? ''}
+                  onChange={(value) => setDraft({...draft, owner_contact: value || null})}
+                />
+              ) : null}
               <TextArea
                 label="Notes"
                 rows={2}
                 value={draft.notes ?? ''}
                 onChange={(value) => setDraft({...draft, notes: value || null})}
               />
-
               <Divider />
-
               <TextInput
                 label="Re-appraisal instruction"
                 placeholder="Base shot added — look again for an acid stamp"
@@ -734,7 +918,6 @@ export function ReviewScreen() {
           </LayoutFooter>
         }
       />
-
       {lightboxMedia.length > 0 ? (
         <Lightbox
           media={lightboxMedia}

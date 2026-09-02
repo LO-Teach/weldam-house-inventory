@@ -184,10 +184,16 @@ export function ListingDrawer({
           />
         ) : null}
         <Stack direction="vertical" gap={1}>
-          <PriceTag value={item.price_local} isSold={item.status === 'sold'} />
-          {item.price_intl != null ? (
+          {/* The ask, not retail: this is what the listing goes up at. */}
+          <PriceTag value={item.ask_local} isSold={item.status === 'sold'} />
+          {item.ask_intl != null ? (
             <Text type="supporting" color="secondary">
-              {formatEuro(item.price_intl)} international
+              {formatEuro(item.ask_intl)} international
+            </Text>
+          ) : null}
+          {item.retail_local != null ? (
+            <Text type="supporting" color="secondary">
+              {formatEuro(item.retail_local)} retail
             </Text>
           ) : null}
         </Stack>
