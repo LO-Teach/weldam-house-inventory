@@ -3,7 +3,11 @@ import 'server-only';
 import {query, type SDKUserMessage} from '@anthropic-ai/claude-agent-sdk';
 
 import {getAppraisalConfig} from './config';
-import {extractJson} from './appraise';
+import {
+  AppraisalOverloadedError,
+  extractJson,
+  isOverloaded,
+} from './appraise';
 import {
   LISTING_CHANNEL_META,
   categoryLabel,
@@ -22,6 +26,15 @@ import {
  * The generated result is cached on the item so a reload does not re-spend a
  * model call, with an explicit Regenerate to throw the cache away.
  */
+
+/**
+ * How long to wait for listing copy before giving up.
+ *
+ * Normal generation takes ten to twenty seconds. The SDK's own retry loop on a
+ * capacity error runs past three minutes, which is far too long to leave a
+ * button spinning.
+ */
+const LISTING_TIMEOUT_MS = 90_000;
 
 const VOICE = `You write for Weldam House, an antique and vintage dealer in Ghent.
 
@@ -126,9 +139,17 @@ Return exactly this JSON object and nothing else:
       };
     }
 
+    // The drawer is an interactive button, and the SDK retries a capacity error
+    // internally for over three minutes before giving up. Waiting that long on
+    // a click is worse than failing in ninety seconds with something to read,
+    // so this gives up first and says what to do about it.
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), LISTING_TIMEOUT_MS);
+
     const response = query({
       prompt: prompt(),
       options: {
+        abortController,
         model: config.model,
         systemPrompt: {type: 'custom', prompt: VOICE},
         tools: [],
@@ -143,17 +164,36 @@ Return exactly this JSON object and nothing else:
     });
 
     let out = '';
-    for await (const message of response) {
-      if (message.type === 'assistant') {
-        for (const block of message.message.content) {
-          if (block.type === 'text') out += block.text;
+    try {
+      for await (const message of response) {
+        if (message.type === 'assistant') {
+          for (const block of message.message.content) {
+            if (block.type === 'text') out += block.text;
+          }
+        } else if (message.type === 'result') {
+          const detail = 'result' in message ? String(message.result ?? '') : '';
+          // A 529 arrives as a result carrying an error string rather than as a
+          // thrown error, so the text has to be checked as well as the subtype.
+          if (isOverloaded(detail) || isOverloaded(out)) {
+            throw new AppraisalOverloadedError();
+          }
+          if (message.subtype !== 'success') {
+            throw new Error(`Listing copy generation failed (${message.subtype}).`);
+          }
+          if (!out) out = detail;
         }
-      } else if (message.type === 'result') {
-        if (message.subtype !== 'success') {
-          throw new Error(`Listing copy generation failed (${message.subtype}).`);
-        }
-        if (!out && 'result' in message) out = message.result;
       }
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        throw new Error(
+          `Gave up after ${Math.round(LISTING_TIMEOUT_MS / 1000)}s. Anthropic is usually over capacity when this happens — try the button again in a few minutes.`,
+        );
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      if (isOverloaded(message)) throw new AppraisalOverloadedError();
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
     return out;
   }
@@ -178,14 +218,21 @@ Return exactly this JSON object and nothing else:
     };
   }
 
-  let text = await run(userText);
+  let lastWasOverload = false;
+  let text = '';
+  try {
+    text = await run(userText);
+  } catch (error) {
+    lastWasOverload = error instanceof AppraisalOverloadedError;
+    throw error;
+  }
   let parsed = readCopy(text);
 
   // Thin or contradictory facts occasionally get a prose refusal instead of the
   // JSON refusal that was asked for. One corrective pass fixes it; failing that,
   // the error carries what actually came back so it is diagnosable rather than
   // just "did not return usable JSON".
-  if (!parsed) {
+  if (!parsed && !lastWasOverload) {
     text = await run(
       `${userText}\n\nYour previous reply was not a JSON object, so it was discarded. Reply with ONLY the JSON object described above — no prose, no code fence. If the facts are too thin to write a real listing, say that inside the "title" and "description" fields.`,
     );

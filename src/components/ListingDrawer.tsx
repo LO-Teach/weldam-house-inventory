@@ -188,12 +188,12 @@ export function ListingDrawer({
           <PriceTag value={item.ask_local} isSold={item.status === 'sold'} />
           {item.ask_intl != null ? (
             <Text type="supporting" color="secondary">
-              {formatEuro(item.ask_intl)} international
+              {formatEuro(item.ask_intl)} ask, international
             </Text>
           ) : null}
           {item.retail_local != null ? (
             <Text type="supporting" color="secondary">
-              {formatEuro(item.retail_local)} retail
+              {formatEuro(item.retail_local)} retail, local
             </Text>
           ) : null}
         </Stack>
@@ -273,7 +273,7 @@ export function ListingDrawer({
               <Button
                 size="sm"
                 variant="secondary"
-                icon="copy"
+                icon={<Icon icon="copy" />}
                 label="Copy title"
                 onClick={() => void copyText('Title', copy.title)}
               />
@@ -293,7 +293,7 @@ export function ListingDrawer({
               <Button
                 size="sm"
                 variant="secondary"
-                icon="copy"
+                icon={<Icon icon="copy" />}
                 label="Copy description"
                 onClick={() => void copyText('Description', copy.description)}
               />
@@ -315,7 +315,7 @@ export function ListingDrawer({
           <Stack direction="horizontal" gap={2} wrap="wrap">
             <Button
               variant="primary"
-              icon="copy"
+              icon={<Icon icon="copy" />}
               label="Copy all"
               onClick={() =>
                 void copyText(
@@ -328,7 +328,7 @@ export function ListingDrawer({
             />
             <Button
               variant="secondary"
-              icon="externalLink"
+              icon={<Icon icon="externalLink" />}
               label={`Open ${meta.label}`}
               href={meta.newListingUrl}
               target="_blank"
