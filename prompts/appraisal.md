@@ -164,20 +164,53 @@ if answered. Each needs:
 - `id` — short slug, e.g. `base_pontil`
 - `question` — one sentence, answerable in five seconds while looking at it
 - `why` — what it changes, in a few words
+- `options` — the answers worth offering as buttons
 
-Good questions:
+### `options` — this is the part that gets it wrong most often
+
+The person answering taps a button. **Write the buttons for the question you
+actually asked.**
+
+Most of these are not yes/no questions. "Is the base smooth or is there a mould
+seam?" has two real answers and neither of them is "yes". Offering Yes/No there
+forces a useless answer or pushes them into free text for something you could
+have anticipated.
+
+So: give **2–4 options, phrased the way the person would say them**, each one
+leading somewhere different. Short — they are button labels, not sentences.
+
+| Question | options |
+| --- | --- |
+| Is the base smooth, or is there a mould seam running up the side? | `["Smooth, no seam", "There's a mould seam", "Can't tell"]` |
+| Is that surface all copper, or is another metal showing through the wear? | `["All copper", "Something silver showing through", "Something yellow showing through"]` |
+| Is there a polished dimple in the centre of the base, or is it flat and ground? | `["Polished dimple (pontil)", "Flat and ground smooth", "Rough / unfinished"]` |
+| Does it feel heavy and cold for its size, or light? | `["Heavy and cold", "Surprisingly light"]` |
+| Run a fingernail round the rim — does it catch anywhere? | `["Smooth all the way round", "Catches in one spot", "Several nicks"]` |
+| Tilt the base to the light — any etched or stamped text? | `["Nothing at all", "Yes, I can read it", "Something there but illegible"]` |
+
+Use a genuine `["Yes", "No"]` only when the question really is binary — "Is the
+original paper label still attached?" — and even then add a third option when
+"partly" is a real state.
+
+Include an uncertainty option ("Can't tell", "Too worn to say") whenever the
+thing is genuinely hard to see. Do not include one when the answer is obvious to
+anyone holding the object.
+
+Never write an option the answer to which you already know from the photograph.
+
+### Good and bad questions
+
+Good:
 
 - "Is there a polished dimple (pontil) in the centre of the base?" → *Polished
   pontil means hand-blown, not moulded — roughly doubles the price.*
-- "Hold the base to the light at an angle — is there any etched or acid-stamped
-  text?" → *A named house triples this.*
-- "Does the metal feel heavy and cold, or light and warm?" → *Bronze vs
+- "Tilt the base to the light — is there any etched or acid-stamped text?" →
+  *A named house triples this.*
+- "Does the metal feel heavy and cold for its size, or light?" → *Bronze vs
   spelter — a large price difference.*
-- "Is the rim perfectly smooth all the way round to a fingernail?" → *An
-  unnoticed chip changes condition and price.*
 
-Bad questions: anything you can already see in the photograph, anything
-requiring expertise the holder does not have, anything vague ("is it old?").
+Bad: anything you can already see in the photograph, anything requiring
+expertise the holder does not have, anything vague ("is it old?").
 
 Return `[]` when the photographs genuinely settle everything.
 
@@ -217,12 +250,48 @@ clear", "oxblood with white spatter".
 
 From the supplied list. `Unknown` when the photographs do not support one.
 
-### `condition_grade` and `condition`
+### `condition_grade` and `condition` — grade harder than feels comfortable
 
-`condition_grade` from the supplied list, and `condition` in prose naming
-**only what is visible**: `no visible chips or clouding`, or `chip on the rim at
-the 4 o'clock position, ~3 mm`. Never `excellent condition` as prose — that is
-what the grade is for.
+`condition` is prose naming **only what is visible**: `chip on the rim at the
+4 o'clock position, ~3 mm`. Never `excellent condition` as prose — that is what
+the grade is for.
+
+`condition_grade` is the number that drives price, and the standing failure mode
+is generosity. A photograph flatters. Chips on a clear glass rim disappear into
+the highlights; a hairline reads as a reflection; three nibbles look like one.
+**When the photographs and your instinct disagree, take the worse grade.**
+
+The grades are defined by damage, not by feel:
+
+| grade | what it means |
+| --- | --- |
+| `mint` | Unused. No wear anywhere. Genuinely rare in second-hand goods — if you are reaching for this, the answer is `excellent`. |
+| `excellent` | No damage at all. No chips, no cracks, no losses, no repairs. Perhaps faint base scratches from standing somewhere. |
+| `good` | Light wear consistent with age — base scratching, gentle tarnish, slight patina. **Still zero chips, cracks, losses or repairs.** |
+| `fair` | ONE small chip or nibble under ~3 mm, or noticeable scratching, clouding, staining or heavy tarnish. |
+| `poor` | Any of: more than one chip, a chip over ~5 mm, a crack, a repair, a visible loss, deep clouding, corrosion through the surface. |
+| `restoration project` | Broken, in pieces, missing parts, needs rewiring or re-plating to be usable. |
+
+Read the rim, the foot and every edge specifically, at the largest view you have.
+Then apply this, in order:
+
+1. Any chip, crack, loss or repair → **the grade is `fair` at best**. Not `good`.
+   Not `excellent`. `good` is a grade for *undamaged* objects with age on them.
+2. More than one chip, or one over about 5 mm → **`poor`**.
+3. An edge that looks irregular, sugary, or repeatedly interrupted → that is
+   several chips, not a decorative feature. Grade it `poor` and ask about it.
+
+Grade what a buyer will complain about, not what you could defend. A buyer who
+receives a `good` bowl with four chips on it opens a dispute; one who was told
+`poor` and bought anyway does not.
+
+Condition drives the price directly — `fair` is 0.7x and `poor` is 0.4x — so an
+over-generous grade is an over-priced object that sits for six months.
+
+**Whenever the object is chippable — glass, crystal, ceramic, porcelain — and
+you cannot read every edge clearly, ask a `questions` entry about it.** The
+person holding it can run a fingernail round the rim in two seconds, and that
+answer is worth more than any amount of squinting.
 
 ### Dimensions
 
@@ -314,8 +383,9 @@ Every key must be present. Use `null`, not an omitted key, not `""`, not
   "questions": [
     {
       "id": "base_pontil",
-      "question": "Is there a polished dimple in the centre of the base?",
-      "why": "Hand-blown rather than moulded — roughly doubles the price."
+      "question": "Is there a polished dimple in the centre of the base, or is it flat and ground smooth?",
+      "why": "Hand-blown rather than moulded — roughly doubles the price.",
+      "options": ["Polished dimple (pontil)", "Flat and ground smooth", "Can't tell"]
     }
   ],
   "reasoning": "one short line, shown on hover only"

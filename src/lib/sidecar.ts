@@ -95,11 +95,33 @@ export function renderSidecar(item: Item, images: ItemImage[]): string {
     lines.push('', '## Appraiser note', '', facts.reasoning);
   }
 
-  const answered = (facts.questions ?? []).filter((q) => q.answer?.trim());
+  // Reads `answered`, which accumulates and outlives the questions that
+  // prompted it, falling back to any answers still living on the live question
+  // list for items recorded before that split existed.
+  const answered = [
+    ...(facts.answered ?? []).map((entry) => ({
+      question: entry.question,
+      answer: entry.answer,
+    })),
+    ...(facts.questions ?? [])
+      .filter(
+        (q) =>
+          q.answer?.trim() &&
+          !(facts.answered ?? []).some((entry) => entry.id === q.id),
+      )
+      .map((q) => ({question: q.question, answer: q.answer as string})),
+  ];
+
   if (answered.length > 0) {
-    lines.push('', '## Checked by hand', '');
-    for (const question of answered) {
-      lines.push(`- **${question.question}** ${question.answer}`);
+    lines.push(
+      '',
+      '## Checked by hand',
+      '',
+      '_Answered by someone holding the object. These outrank the photographs._',
+      '',
+    );
+    for (const entry of answered) {
+      lines.push(`- **${entry.question}** ${entry.answer}`);
     }
   }
 

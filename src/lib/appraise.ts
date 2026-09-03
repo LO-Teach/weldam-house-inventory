@@ -89,6 +89,29 @@ export class AppraisalParseError extends Error {
 }
 
 /**
+ * Anthropic is over capacity. Worth its own type because it is the one failure
+ * that is nothing to do with the object, the photographs or the prompt: the
+ * right response is to try the same item again later, not to edit anything.
+ *
+ * The SDK retries internally for a few minutes before surfacing this, which is
+ * why a job can sit on "Appraising" for a long time and then fail all at once.
+ */
+export class AppraisalOverloadedError extends Error {
+  constructor() {
+    super(
+      'Anthropic is over capacity (529). Nothing is wrong with this lot — ' +
+        're-appraise it in a few minutes. Check status.claude.com if it keeps up.',
+    );
+    this.name = 'AppraisalOverloadedError';
+  }
+}
+
+/** True for the transient server-side capacity errors, not for real failures. */
+export function isOverloaded(message: string): boolean {
+  return /\b529\b|overloaded|capacity|temporarily unavailable|\b503\b/i.test(message);
+}
+
+/**
  * Reads a derivative back as base64. Prefers the local .work/ copy — it is the
  * same bytes we uploaded and costs no round trip — and falls back to the bucket
  * when .work/ has been cleared, which it is designed to survive.
@@ -212,18 +235,25 @@ export async function appraise(input: AppraisalInput): Promise<AppraisalOutcome>
       }
     } else if (message.type === 'result') {
       costUsd = 'total_cost_usd' in message ? message.total_cost_usd : null;
+      const detail = 'result' in message ? String(message.result ?? '') : '';
+      // A 529 arrives as a successful-looking result carrying an error string,
+      // so the text has to be checked as well as the subtype.
+      if (isOverloaded(detail) || isOverloaded(text)) {
+        throw new AppraisalOverloadedError();
+      }
       if (message.subtype !== 'success') {
         throw new AppraisalParseError(
           `Appraisal run failed (${message.subtype}).`,
           text || JSON.stringify(message),
         );
       }
-      if (!text && 'result' in message) text = message.result;
+      if (!text) text = detail;
     }
   }
 
   const parsed = extractJson(text);
   if (!parsed) {
+    if (isOverloaded(text)) throw new AppraisalOverloadedError();
     throw new AppraisalParseError(
       'The appraiser did not return a JSON object.',
       text,

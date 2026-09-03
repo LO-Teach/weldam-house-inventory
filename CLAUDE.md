@@ -87,9 +87,26 @@ These drive storefront filters, so:
 - Calibration happens by editing that file, then **Re-appraise drafts** on the
   Inventory screen — never by patching item rows by hand. Editing the prompt
   does nothing to items already in the table.
-- The appraiser emits `questions`: things only someone holding the object can
-  answer. Answers are fed back as established fact and outrank the photographs.
-  They persist across re-runs, so nobody re-checks a base twice.
+- The appraiser emits `questions`, each with its own `options` — the answers
+  worth offering as buttons. Most of these are not yes/no ("is the base smooth
+  or is there a mould seam?"), so the model supplies the choices along with the
+  question and the UI falls back to Yes/No only when it gives none.
+- Answers live in `facts.answered`, NOT `facts.questions`. `questions` is
+  whatever the appraiser is asking right now and empties out once it has nothing
+  left to ask — if the answers lived there, finishing the checklist would delete
+  the facts it just established. `answered` accumulates and is replayed into
+  every later re-appraisal.
+- An item whose questions are all answered, and which the appraiser has nothing
+  further to ask about, **auto-confirms** in the queue rather than going back to
+  Review for a second click. That path has to name the archive folder too, which
+  is why `applyLotFolderName` is shared with the item PATCH route.
+- Condition grading errs generous unless pushed: a photograph hides chips. The
+  prompt defines the grades by damage and says to take the worse one. Any chip
+  caps the grade at `fair`; more than one, or one over ~5 mm, is `poor`.
+- A 529 from Anthropic surfaces as `AppraisalOverloadedError` — the one failure
+  that means "try this lot again later" rather than "something is wrong with
+  this lot". The SDK retries for minutes first, so a job can sit on
+  "Appraising" a long time before failing.
 - The Agent SDK authenticates against the local Claude Code subscription with no
   `ANTHROPIC_API_KEY` set. Verified by `npm run verify:agent` — re-run that if
   appraisals start failing on auth.

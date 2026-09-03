@@ -2,6 +2,7 @@
 
 import {useRef} from 'react';
 import {Button} from '@astryxdesign/core/Button';
+import {Collapsible} from '@astryxdesign/core/Collapsible';
 import {NumberInput} from '@astryxdesign/core/NumberInput';
 import {Section} from '@astryxdesign/core/Section';
 import {Stack} from '@astryxdesign/core/Stack';
@@ -10,7 +11,11 @@ import {TextInput} from '@astryxdesign/core/TextInput';
 import {Tooltip} from '@astryxdesign/core/Tooltip';
 
 import {askFromRetail, floorFromAsk, ladderPreview} from '@/src/lib/pricing';
-import type {AppraisalQuestion, ItemWithImages} from '@/src/lib/types';
+import type {
+  AnsweredQuestion,
+  AppraisalQuestion,
+  ItemWithImages,
+} from '@/src/lib/types';
 import {formatEuro} from './common';
 
 /**
@@ -50,41 +55,7 @@ export function QuestionChecklist({
         </Stack>
 
         {questions.map((question) => (
-          <Stack key={question.id} direction="vertical" gap={1}>
-            <Text weight="medium">{question.question}</Text>
-            {question.why ? (
-              <Text type="supporting" color="secondary">
-                {question.why}
-              </Text>
-            ) : null}
-            <Stack direction="horizontal" gap={2} vAlign="center" wrap="wrap">
-              <Button
-                size="sm"
-                variant={question.answer === 'Yes' ? 'primary' : 'secondary'}
-                label="Yes"
-                onClick={() => onAnswer(question.id, 'Yes')}
-              />
-              <Button
-                size="sm"
-                variant={question.answer === 'No' ? 'primary' : 'secondary'}
-                label="No"
-                onClick={() => onAnswer(question.id, 'No')}
-              />
-              <TextInput
-                label={`Answer: ${question.question}`}
-                isLabelHidden
-                size="sm"
-                width={280}
-                placeholder="…or describe what you see"
-                value={
-                  question.answer === 'Yes' || question.answer === 'No'
-                    ? ''
-                    : (question.answer ?? '')
-                }
-                onChange={(value) => onAnswer(question.id, value)}
-              />
-            </Stack>
-          </Stack>
+          <QuestionRow key={question.id} question={question} onAnswer={onAnswer} />
         ))}
 
         <Button
@@ -96,6 +67,91 @@ export function QuestionChecklist({
         />
       </Stack>
     </Section>
+  );
+}
+
+/**
+ * What has already been established by hand.
+ *
+ * Worth showing even though the appraiser has stopped asking: it is proof the
+ * answers were kept, and it stops you re-checking a base you already checked.
+ */
+export function AnsweredFacts({facts}: {facts: AnsweredQuestion[]}) {
+  if (facts.length === 0) return null;
+  return (
+    <Collapsible
+      trigger={`Checked by hand (${facts.length})`}
+      defaultIsOpen={false}
+    >
+      <Stack direction="vertical" gap={2}>
+        {facts.map((entry) => (
+          <Stack key={entry.id} direction="vertical" gap={0}>
+            <Text type="supporting" color="secondary">
+              {entry.question}
+            </Text>
+            <Text weight="medium">{entry.answer}</Text>
+          </Stack>
+        ))}
+      </Stack>
+    </Collapsible>
+  );
+}
+
+/** Yes/No, for the genuinely binary questions that arrive without options. */
+const BINARY = ['Yes', 'No'];
+
+/**
+ * One question, its suggested answers, and an escape hatch.
+ *
+ * The options come from the appraiser because only it knows what the question
+ * means: "is the base smooth or is there a mould seam" has two real answers and
+ * neither is "yes". The free-text box stays for the case nobody anticipated —
+ * which is also how the appraiser learns it asked a bad question.
+ */
+function QuestionRow({
+  question,
+  onAnswer,
+}: {
+  question: AppraisalQuestion;
+  onAnswer: (id: string, answer: string) => void;
+}) {
+  const options = question.options?.length ? question.options : BINARY;
+  const answer = question.answer ?? '';
+  // An answer that is not one of the buttons is a typed one, and belongs in the
+  // text box rather than vanishing.
+  const isCustom = answer !== '' && !options.includes(answer);
+
+  return (
+    <Stack direction="vertical" gap={1}>
+      <Text weight="medium">{question.question}</Text>
+      {question.why ? (
+        <Text type="supporting" color="secondary">
+          {question.why}
+        </Text>
+      ) : null}
+      <Stack direction="horizontal" gap={2} vAlign="center" wrap="wrap">
+        {options.map((option) => (
+          <Button
+            key={option}
+            size="sm"
+            variant={answer === option ? 'primary' : 'secondary'}
+            label={option}
+            // Tapping the chosen answer again clears it, so a mis-tap is one
+            // click to undo rather than a wrong fact sent to the appraiser.
+            onClick={() => onAnswer(question.id, answer === option ? '' : option)}
+          />
+        ))}
+        <TextInput
+          label={`Answer: ${question.question}`}
+          isLabelHidden
+          size="sm"
+          width={240}
+          placeholder="…or say it in your own words"
+          value={isCustom ? answer : ''}
+          onChange={(value) => onAnswer(question.id, value)}
+        />
+      </Stack>
+    </Stack>
   );
 }
 

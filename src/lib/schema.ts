@@ -18,6 +18,18 @@ const questionSchema = z.object({
   id: z.string().min(1).max(64),
   question: z.string().min(1),
   why: z.string().nullable(),
+  /**
+   * The answers worth offering as buttons, written in the voice of the person
+   * holding the object. "Is there a mould seam?" is not a yes/no question, and
+   * forcing it into one throws away the answer — so the appraiser supplies the
+   * options along with the question. Empty falls back to Yes/No in the UI.
+   */
+  options: z
+    .array(z.string().min(1).max(80))
+    .max(5)
+    .nullable()
+    .optional()
+    .transform((value) => value ?? []),
   answer: z.string().nullable().optional(),
 });
 

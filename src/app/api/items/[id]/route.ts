@@ -2,7 +2,7 @@ import type {NextRequest} from 'next/server';
 
 import {handleRouteError, jsonError, readJson} from '@/src/lib/http';
 import {getItem} from '@/src/lib/items';
-import {renameLotFolder} from '@/src/lib/pipeline';
+import {applyLotFolderName} from '@/src/lib/archive-folder';
 import {itemPatchSchema} from '@/src/lib/schema';
 import {bucketName, supabase} from '@/src/lib/supabase';
 
@@ -89,36 +89,18 @@ export async function PATCH(request: NextRequest, ctx: RouteContext<'/api/items/
         patch.title_nl !== undefined ||
         patch.title_en !== undefined);
 
-    let renameWarning: string | null = null;
     if (shouldRename) {
-      try {
-        const outcome = await renameLotFolder(
-          existing.lot_number as number,
-          (existing.archive_folder as string | null) ?? null,
-          nextTitle,
-        );
-        if (outcome.folder !== existing.archive_folder) {
-          patch.archive_folder = outcome.folder;
-          if (outcome.renamed) {
-            // Every stored path points inside the folder that just moved.
-            await moveArchivePaths(
-              id,
-              (existing.archive_folder as string | null) ?? null,
-              outcome.folder,
-            );
-          }
-        }
-      } catch (error) {
-        // A missing archive is not a reason to refuse a database edit — the
-        // rename is cosmetic and can be redone by saving again later.
-        renameWarning =
-          error instanceof Error ? error.message : 'Could not rename the lot folder.';
-      }
+      const folder = await applyLotFolderName(
+        id,
+        existing.lot_number as number,
+        (existing.archive_folder as string | null) ?? null,
+        nextTitle,
+      );
+      if (folder) patch.archive_folder = folder;
     }
 
     const {error} = await db.from('items').update(patch).eq('id', id);
     if (error) return jsonError(error.message, 500);
-    if (renameWarning) console.warn('[PATCH /api/items/[id]] rename:', renameWarning);
 
     const item = await getItem(id);
     if (!item) return jsonError('No such item.', 404);
@@ -165,32 +147,3 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext<'/api/item
   }
 }
 
-/**
- * Rewrites every archive_path for one item after its folder was renamed.
- *
- * The paths are stored relative to the archive root as archive/<folder>/<file>,
- * so only the middle segment moves. Done by rewriting each row rather than a
- * SQL replace, because a folder name can contain anything the title did.
- */
-async function moveArchivePaths(
-  itemId: string,
-  fromFolder: string | null,
-  toFolder: string,
-): Promise<void> {
-  const db = supabase();
-  const {data} = await db
-    .from('item_images')
-    .select('id, archive_path')
-    .eq('item_id', itemId);
-
-  for (const row of data ?? []) {
-    const current = row.archive_path as string | null;
-    if (!current) continue;
-    const file = current.split('/').pop();
-    if (!file) continue;
-    const next = ['archive', toFolder, file].join('/');
-    if (next === current) continue;
-    await db.from('item_images').update({archive_path: next}).eq('id', row.id);
-  }
-  void fromFolder;
-}

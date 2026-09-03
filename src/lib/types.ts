@@ -74,8 +74,22 @@ export interface AppraisalQuestion {
   id: string;
   question: string;
   why: string | null;
+  /**
+   * Suggested answers, phrased as the person holding the object would say them
+   * — "Smooth all the way round", "There's a mould seam". Rendered as buttons.
+   * Empty means the question really is a yes/no and the UI offers those.
+   */
+  options?: string[] | null;
   /** Filled in on the Review screen. Null until answered. */
   answer?: string | null;
+}
+
+/** A question that has been answered by hand. Kept forever. */
+export interface AnsweredQuestion {
+  id: string;
+  question: string;
+  answer: string;
+  answered_at: string;
 }
 
 export interface Item {
@@ -179,8 +193,18 @@ export interface ItemFacts {
   reasoning?: string | null;
   /** Free-text nudge the user typed at ingest. Never treated as fact. */
   hint?: string | null;
-  /** What the appraiser wants checked, and the answers once given. */
+  /** What the appraiser currently wants checked. Replaced on every re-run. */
   questions?: AppraisalQuestion[];
+  /**
+   * Everything ever answered by hand, accumulated and never discarded.
+   *
+   * This is separate from `questions` on purpose. `questions` is whatever the
+   * appraiser is asking right now, so it empties out once it has nothing left
+   * to ask — and if the answers lived only there, finishing the checklist would
+   * delete the very facts you just established. These are fed back into every
+   * later re-appraisal, so nobody is asked to check the same base twice.
+   */
+  answered?: AnsweredQuestion[];
   /** Per-channel listing copy, cached so it survives a reload. */
   listings?: Partial<Record<ListingChannel, ListingCopy>>;
 }

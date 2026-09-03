@@ -1,6 +1,7 @@
 'use client';
 
 import {useCallback, useEffect, useMemo, useState} from 'react';
+import {useRouter} from 'next/navigation';
 import {Banner} from '@astryxdesign/core/Banner';
 import {Button} from '@astryxdesign/core/Button';
 import {CodeBlock} from '@astryxdesign/core/CodeBlock';
@@ -34,8 +35,14 @@ import {
   patchItem,
   requeueAppraisal,
 } from '@/src/lib/client';
-import {AddPhotos, PriceLadderFields, QuestionChecklist} from './ReviewFields';
+import {
+  AddPhotos,
+  AnsweredFacts,
+  PriceLadderFields,
+  QuestionChecklist,
+} from './ReviewFields';
 import type {
+  AnsweredQuestion,
   AppraisalJob,
   AppraisalQuestion,
   Channel,
@@ -59,12 +66,15 @@ const NO_IMAGES: ItemWithImages['images'] = [];
 
 const NO_QUESTIONS: AppraisalQuestion[] = [];
 
+const NO_ANSWERED: AnsweredQuestion[] = [];
+
 /**
  * One item at a time, keyboard-driven. Hundreds of these get processed in a
  * sitting, so the mouse is optional: J/K walk the queue, Enter confirms,
  * R re-appraises, arrow keys page the gallery.
  */
 export function ReviewScreen() {
+  const router = useRouter();
   const toast = useToast();
   const [queue, setQueue] = useState<ItemWithImages[] | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -189,13 +199,32 @@ export function ReviewScreen() {
     [rows.length],
   );
 
-  /** Removes the item from the queue in place and lands on the next one. */
-  const dropCurrent = useCallback(() => {
-    setQueue((existing) => (existing ?? []).filter((_, i) => i !== index));
-    setIndex((currentIndex) => Math.min(currentIndex, Math.max(0, rows.length - 2)));
-  }, [index, rows.length]);
+  /**
+   * Takes the item out of the queue and lands on the next one — or leaves for
+   * the Inventory when that was the last one.
+   *
+   * Sitting on the final item after dealing with it is a dead end: the buttons
+   * still work, they just do nothing you can see, and it reads as the app being
+   * stuck rather than the queue being finished.
+   */
+  const dropCurrent = useCallback(
+    (doneMessage?: string) => {
+      const remaining = rows.length - 1;
+      setQueue((existing) => (existing ?? []).filter((_, i) => i !== index));
+      setIndex((currentIndex) => Math.min(currentIndex, Math.max(0, remaining - 1)));
+      if (remaining === 0) {
+        toast({body: doneMessage ?? 'Review queue finished.'});
+        router.push('/');
+      }
+    },
+    [index, rows.length, router, toast],
+  );
   const save = useCallback(
-    async (patch: Record<string, unknown>, {removeFromQueue = false} = {}) => {
+    async (
+      patch: Record<string, unknown>,
+      {removeFromQueue = false} = {},
+      doneMessage?: string,
+    ) => {
       if (!draft) return;
       setIsSaving(true);
       try {
@@ -204,7 +233,7 @@ export function ReviewScreen() {
         setQueue((existing) =>
           (existing ?? []).map((row) => (row.id === item.id ? item : row)),
         );
-        if (removeFromQueue) dropCurrent();
+        if (removeFromQueue) dropCurrent(doneMessage);
       } catch (caught) {
         toast({
           type: 'error',
@@ -263,10 +292,12 @@ export function ReviewScreen() {
         status: 'appraised',
       },
       {removeFromQueue: true},
+      `Lot ${lotLabel(draft.lot_number)} confirmed — that was the last one.`,
     );
     toast({body: `Lot ${lotLabel(draft.lot_number)} confirmed.`});
   }, [draft, save, toast]);
   const questions = draft?.facts?.questions ?? NO_QUESTIONS;
+  const answeredFacts = draft?.facts?.answered ?? NO_ANSWERED;
 
   /**
    * Sends the answers back as established fact and re-runs the appraisal.
@@ -291,9 +322,13 @@ export function ReviewScreen() {
         })),
       );
       toast({
-        body: `Lot ${lotLabel(draft.lot_number)} re-appraised with ${answered.length} answer${answered.length === 1 ? '' : 's'}. It will come back shortly.`,
+        body: `Lot ${lotLabel(draft.lot_number)} sent back with ${answered.length} answer${answered.length === 1 ? '' : 's'}. If the appraiser has nothing left to ask it confirms itself; otherwise it returns to this queue.`,
       });
-      advance(1);
+      // It is being re-processed, so it does not belong in the queue any more.
+      // Refresh brings it back if the appraiser still wants something.
+      dropCurrent(
+        `Lot ${lotLabel(draft.lot_number)} sent back — that was the last one in the queue.`,
+      );
     } catch (caught) {
       toast({
         type: 'error',
@@ -302,7 +337,7 @@ export function ReviewScreen() {
     } finally {
       setIsReappraising(false);
     }
-  }, [draft, questions, advance, toast]);
+  }, [draft, questions, dropCurrent, toast]);
 
   /** Adds photographs to this lot — the base shot the appraiser asked for. */
   const attachPhotos = useCallback(
@@ -339,7 +374,9 @@ export function ReviewScreen() {
       await requeueAppraisal(draft.id, reappraiseNote.trim() || undefined);
       toast({body: `Lot ${lotLabel(draft.lot_number)} sent back for re-appraisal.`});
       setReappraiseNote('');
-      advance(1);
+      dropCurrent(
+        `Lot ${lotLabel(draft.lot_number)} sent back — that was the last one in the queue.`,
+      );
     } catch (caught) {
       toast({
         type: 'error',
@@ -348,7 +385,7 @@ export function ReviewScreen() {
     } finally {
       setIsReappraising(false);
     }
-  }, [draft, reappraiseNote, setReappraiseNote, advance, toast]);
+  }, [draft, reappraiseNote, setReappraiseNote, dropCurrent, toast]);
   const images = draft?.images ?? NO_IMAGES;
 
   // Keyboard: J/K walk the queue, Enter confirms, R re-appraises, arrows page
@@ -602,6 +639,8 @@ export function ReviewScreen() {
                   isBusy={isReappraising}
                 />
               ) : null}
+              <AnsweredFacts facts={answeredFacts} />
+
               {isPending ? (
                 <Banner
                   status="info"
