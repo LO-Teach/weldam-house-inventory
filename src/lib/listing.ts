@@ -44,11 +44,19 @@ or plainly unusable: say so INSIDE the JSON — a title and description that adm
 the object cannot be described yet — rather than replying in prose. A reply that
 is not JSON is discarded, so it helps nobody.
 
-Voice: silver-tongued, warm, persuasive. A dealer's flourish anchored to true
-facts. The showmanship never touches price or provenance — you may make an
-object sound worth looking at, you may not invent what it is.
+Voice: plain and specific. Say what the object is, what it is made of, how big
+it is, and what condition it is in. That is the whole job. A buyer scanning
+twenty listings wants the facts fast, and padding round them reads as a seller
+with something to hide.
+
+Length is a ceiling, not a target. If the facts run out in three sentences,
+stop at three sentences.
 
 Hard rules:
+- No scene-setting, no atmosphere, no sales pitch, no closing line. Do not write
+  what the object would look like on a shelf or who it would suit.
+- Nothing about shipping, collection, postage, payment or viewing. Those are
+  settled in the buyer's messages, not in the description.
 - Never state a maker, mark, date or material the facts do not contain. If the
   maker is unknown, the copy says nothing about a maker at all. Do not hedge
   with "possibly Val Saint Lambert" — that reads as a claim to a buyer.
@@ -66,17 +74,17 @@ function channelBrief(channel: ListingChannel): string {
     case 'marktplaats':
       return `Channel: ${meta.label} (Dutch, Belgian/Dutch local market).
 Title: Dutch, at most ${meta.titleMaxChars} characters, structured as object, material, style/era, size. Short and searchable — a buyer types two words into the box.
-Description: Dutch, 60-120 words. Plain paragraphs, no headings, no bullet symbols. Open with what it is, then material and era, then dimensions, then condition. Close with one short line on collection or shipping from Ghent.
+Description: Dutch, 35-60 words, one or two short paragraphs. In order: what it is and what it is made of, the era, the dimensions, the condition. Name every chip, crack, scratch and repair the facts record, in plain words. Then stop — no closing line of any kind.
 Price: the local price, as a whole number of euros.`;
     case 'ebay':
       return `Channel: eBay (English, international).
 Title: English, HARD LIMIT ${meta.titleMaxChars} characters — count them. Front-load the searchable nouns: object, material, style, era, maker if known. No punctuation flourishes.
-Description: English, 80-140 words. Buyers are abroad and cannot inspect it, so be concrete about dimensions and condition. Mention that it ships from Belgium.
+Description: English, 50-80 words. The buyer is abroad and cannot inspect it, so dimensions and condition carry more weight than anywhere else — be exact about both, and name every flaw the facts record. Nothing about postage or location; eBay has its own fields for those.
 Price: the international price if one is set, otherwise the local price.`;
     case 'catawiki':
       return `Channel: Catawiki (English, curated auction, reviewed by an expert).
 Title: English, at most ${meta.titleMaxChars} characters. Catalogue register: object, material, maker or origin, period.
-Description: English, 100-160 words in the register of an auction catalogue entry. Provenance language is welcome where the facts support it — period, region, technique, form. Where they do not, say what is observable and stop. An expert reads this before it goes live, so an overreach gets the lot rejected.
+Description: English, 70-110 words in the register of an auction catalogue entry — the one channel where a fuller description is expected, because a specialist reads it before it goes live. Provenance language is welcome where the facts support it: period, region, technique, form. Where they do not, say what is observable and stop; an overreach gets the lot rejected.
 Price: the international price if one is set, otherwise the local price. This is a reserve, so it sits at the low end.`;
   }
 }

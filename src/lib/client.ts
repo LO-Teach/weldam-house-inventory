@@ -237,6 +237,19 @@ export function saveListing(
   });
 }
 
+/**
+ * Opens this lot's photo folder in the OS file manager.
+ *
+ * A browser cannot drag real files into another web page — the receiving page
+ * gets a URL and an empty `dataTransfer.files` — so the upload step ends in
+ * Explorer either way. This puts it one click away instead of four.
+ */
+export function openItemFolder(
+  itemId: string,
+): Promise<{path: string; note?: string}> {
+  return request(`/api/items/${itemId}/folder`, {method: 'POST'});
+}
+
 // --- system -----------------------------------------------------------------
 
 export interface ArchiveStatus {

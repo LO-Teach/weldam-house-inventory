@@ -20,6 +20,7 @@ import {useToast} from '@astryxdesign/core/Toast';
 import {
   copyToClipboard,
   generateListing,
+  openItemFolder,
   patchItem,
   saveListing,
 } from '@/src/lib/client';
@@ -137,6 +138,24 @@ export function ListingDrawer({
       });
     }
   }, [copy, item.id, channel, commitToItem, toast]);
+
+  /**
+   * The photographs still have to reach 2dehands by drag and drop, and a web
+   * page cannot hand real files to another web page — drag an image out of a
+   * tab and the receiving uploader gets a URL with no File behind it. So the
+   * best available move is to put Explorer on screen at the right folder.
+   */
+  const openFolder = useCallback(async () => {
+    try {
+      const {note} = await openItemFolder(item.id);
+      if (note) toast({type: 'info', body: note});
+    } catch (caught) {
+      toast({
+        type: 'error',
+        body: caught instanceof Error ? caught.message : String(caught),
+      });
+    }
+  }, [item.id, toast]);
 
   const markListed = useCallback(async () => {
     try {
@@ -333,6 +352,12 @@ export function ListingDrawer({
               href={meta.newListingUrl}
               target="_blank"
               rel="noreferrer noopener"
+            />
+            <Button
+              variant="secondary"
+              label={`Open photo folder (${item.images.length})`}
+              tooltip="Opens the lot's folder in Explorer so the photographs can be dragged into the uploader."
+              onClick={() => void openFolder()}
             />
             <Button
               variant="ghost"
